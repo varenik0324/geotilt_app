@@ -103,7 +103,6 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (F_STRING - F_CONCRETE)
     df['stress_MPa'] = E_MODULUS * df['strain'] / 1_000_000 * 0.00689476
 
-    # Сбор статистики
     stats = {
         'Количество точек': len(df),
         'Средняя деформация, μϵ': df['strain'].mean(),
@@ -116,20 +115,18 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df, stats
 
 # ------------------------------------------------------------
-# Генерация отчётов (PDF, Word, Excel)
+# Генерация отчётов
 # ------------------------------------------------------------
-
 def generate_excel_report(df, stats, sensor_name):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Результат')
-        # Лист со сводкой
         stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
         stats_df.to_excel(writer, sheet_name='Сводка')
     return output.getvalue()
 
 def generate_pdf_report(df, stats, sensor_name, f0, t0):
-    # Сначала создаём график через matplotlib
+    # График через matplotlib
     fig_mpl, ax = plt.subplots(figsize=(8, 4))
     ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
     ax.set_xlabel("Нагрузка, тс")
@@ -146,7 +143,6 @@ def generate_pdf_report(df, stats, sensor_name, f0, t0):
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
-    # Логотип
     logo_path = get_resource_path("logo.png")
     if os.path.exists(logo_path):
         try:
@@ -168,13 +164,11 @@ def generate_pdf_report(df, stats, sensor_name, f0, t0):
     c.drawString(50, height - 80, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     c.drawString(50, height - 100, f"Нулевые значения: f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
 
-    # График
     img_path = tempfile.mktemp(suffix=".png")
     img.save(img_path)
     c.drawImage(img_path, 50, height - 450, width=500, height=250)
     os.remove(img_path)
 
-    # Сводка
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 480, "Сводка по результатам:")
     c.setFont("Helvetica", 10)
@@ -192,13 +186,11 @@ def generate_pdf_report(df, stats, sensor_name, f0, t0):
 
 def generate_word_report(df, stats, sensor_name, f0, t0):
     doc = Document()
-    # Заголовок
     title = doc.add_heading(f"Отчёт по датчику: {sensor_name}", level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph(f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     doc.add_paragraph(f"Нулевые значения: f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
 
-    # Сводка
     doc.add_heading("Сводка по результатам", level=2)
     for key, val in stats.items():
         doc.add_paragraph(f"{key}: {val:.3f}" if isinstance(val, float) else f"{key}: {val}")
@@ -220,7 +212,6 @@ def generate_word_report(df, stats, sensor_name, f0, t0):
     doc.add_picture(img_path, width=Inches(6))
     os.remove(img_path)
 
-    # Таблица результатов (первые 20 строк)
     doc.add_heading("Таблица результатов (первые 20 строк)", level=2)
     table = doc.add_table(rows=1, cols=5)
     table.style = 'Table Grid'
@@ -238,7 +229,6 @@ def generate_word_report(df, stats, sensor_name, f0, t0):
         row_cells[3].text = f"{row['strain']:.1f}"
         row_cells[4].text = f"{row['stress_MPa']:.3f}"
 
-    # Подпись
     doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     buffer = io.BytesIO()
@@ -253,7 +243,6 @@ def display_results(result, stats, sensor_name, f0, t0):
     st.subheader("✅ Результат обработки")
     st.dataframe(result)
 
-    # График
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
     fig.update_layout(
@@ -277,7 +266,6 @@ def display_results(result, stats, sensor_name, f0, t0):
         )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Скачивание
     st.subheader("📥 Скачать отчёт")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -311,7 +299,7 @@ def display_results(result, stats, sensor_name, f0, t0):
 st.set_page_config(page_title="Анализ датчиков", layout="wide")
 st.title("📊 Обработка данных тензодатчиков")
 
-# Боковая панель с настройками (общая для обеих вкладок)
+# Боковая панель с настройками
 with st.sidebar:
     st.header("Настройки датчика")
     sensor_type = st.selectbox(
@@ -416,14 +404,62 @@ with tab1:
         except Exception as e:
             st.error(f"Ошибка при обработке: {e}")
 
-# ---------- Вкладка 2: Ручной ввод ----------
+# ---------- Вкладка 2: Ручной ввод (исправлена ошибка с тройными кавычками) ----------
 with tab2:
     st.subheader("Вставьте данные из буфера обмена")
-    st.markdown("""
-    Вставьте данные в текстовое поле. Ожидается **три колонки** в порядке:
-    1. Нагрузка (тс)
-    2. Частота (Гц)
-    3. Температура (°C)
+    st.markdown(
+        "Вставьте данные в текстовое поле. Ожидается **три колонки** в порядке:\n"
+        "1. Нагрузка (тс)\n"
+        "2. Частота (Гц)\n"
+        "3. Температура (°C)\n\n"
+        "Разделитель можно выбрать ниже. Пример (табуляция):\n"
+        "0.0  1000.0  20.0\n"
+        "5.0  1012.5  21.2\n"
+        "10.0 1025.0  22.0"
+    )
 
-    Разделитель можно выбрать ниже. Пример (табуляция):
+    delimiter = st.selectbox(
+        "Разделитель",
+        options=["\\t (табуляция)", ", (запятая)", "; (точка с запятой)", "пробел"],
+        index=0,
+        key="delimiter"
+    )
+    if delimiter == "\\t (табуляция)":
+        sep = '\t'
+    elif delimiter == ", (запятая)":
+        sep = ','
+    elif delimiter == "; (точка с запятой)":
+        sep = ';'
+    else:
+        sep = ' '
+
+    text_data = st.text_area("Введите или вставьте данные", height=200, key="manual_input")
+
+    if st.button("Обработать введённые данные", key="process_manual"):
+        if not text_data.strip():
+            st.warning("Пожалуйста, введите данные.")
+        else:
+            try:
+                lines = text_data.strip().splitlines()
+                rows = []
+                for line in lines:
+                    if line.strip():
+                        parts = line.split(sep)
+                        parts = [p for p in parts if p.strip()]
+                        if len(parts) >= 3:
+                            rows.append(parts[:3])
+                if not rows:
+                    st.error("Не удалось распознать данные. Проверьте формат и разделитель.")
+                else:
+                    df_manual = pd.DataFrame(rows, columns=['load', 'freq', 'temp'])
+                    with st.spinner("Обработка данных..."):
+                        result, stats = process_data(df_manual, f0, t0, sensor_type, g_val, c_val)
+
+                    if result is not None:
+                        st.session_state.result = result
+                        st.session_state.sensor_name = "Ручной ввод"
+                        display_results(result, stats, "Ручной ввод", f0, t0)
+
+            except Exception as e:
+                st.error(f"Ошибка при обработке: {e}")
 
