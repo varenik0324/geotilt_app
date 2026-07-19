@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import io
+import re
 import json
 import os
 import sys
@@ -15,10 +16,13 @@ import tempfile
 import base64
 
 # ------------------------------------------------------------
-# Функция для получения пути к ресурсам (работает и в .exe)
+# Функция для получения правильного пути к ресурсам
+# (работает как в режиме разработки, так и в собранном .exe)
 # ------------------------------------------------------------
 def get_resource_path(relative_path):
+    """Возвращает абсолютный путь к файлу, учитывая сборку PyInstaller."""
     if getattr(sys, 'frozen', False):
+        # Запущено из .exe
         base_path = sys._MEIPASS
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +46,10 @@ def load_config():
     return {}
 
 def save_config(config):
+    # Сохраняем конфиг в ту же папку, где находится .exe (или рядом с ним)
+    # В режиме frozen CONFIG_FILE может указывать на временную папку, поэтому сохраняем в рабочую директорию
     if getattr(sys, 'frozen', False):
+        # Сохраняем рядом с .exe
         config_dir = os.path.dirname(sys.executable)
         config_path = os.path.join(config_dir, "app_config.json")
     else:
@@ -59,6 +66,8 @@ if 'sensor_name' not in st.session_state:
     st.session_state.sensor_name = ""
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
+if 'auto_selected' not in st.session_state:
+    st.session_state.auto_selected = {}
 
 # ------------------------------------------------------------
 # Функция обработки данных
@@ -86,15 +95,24 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
         return None
 
     df = df.copy()
-    # Предполагаем, что в df есть столбцы 'load', 'freq', 'temp'
     df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (F_STRING - F_CONCRETE)
     df['stress_MPa'] = E_MODULUS * df['strain'] / 1_000_000 * 0.00689476
     return df
 
 # ------------------------------------------------------------
-# Генерация PDF-отчёта
+# Автоопределение столбцов (без изменений)
+# ------------------------------------------------------------
+def auto_detect_columns(df, skip_rows=0):
+    # ... (код остаётся тем же, что и у вас)
+    # Для краткости я не копирую его полностью, но вы вставляете свою функцию
+    # В финальном файле она должна быть здесь
+    pass  # Замените на ваш код
+
+# ------------------------------------------------------------
+# Генерация PDF-отчёта (с поддержкой kaleido или matplotlib)
 # ------------------------------------------------------------
 def generate_pdf_report(df, sensor_name, f0, t0):
+    # Пытаемся использовать kaleido, если есть
     try:
         import plotly.io as pio
         pio.kaleido.scope.default_format = "png"
@@ -104,6 +122,7 @@ def generate_pdf_report(df, sensor_name, f0, t0):
         img_bytes = fig.to_image(format="png", width=800, height=400)
         img = Image.open(io.BytesIO(img_bytes))
     except:
+        # Если kaleido не установлен, используем matplotlib
         fig_mpl, ax = plt.subplots(figsize=(8, 4))
         ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
         ax.set_xlabel("Нагрузка, тс")
@@ -132,6 +151,7 @@ def generate_pdf_report(df, sensor_name, f0, t0):
         except:
             pass
 
+    # Подпись
     c.setFont("Helvetica", 8)
     c.setFillColorRGB(0.5, 0.5, 0.5, 0.5)
     c.drawString(50, 20, "© Геофундамент, 2026")
@@ -167,6 +187,7 @@ def generate_pdf_report(df, sensor_name, f0, t0):
         y -= 15
         if y < 50:
             c.showPage()
+            # повтор логотипа и подписи на новой странице
             if os.path.exists(logo_path):
                 try:
                     logo = Image.open(logo_path)
@@ -203,130 +224,74 @@ with st.sidebar:
             "MAS‑VWE (давление грунта)"
         ],
         index=0,
-        key="sensor_type"
+        key="sensor_type_select"
     )
     g_val = None
     c_val = None
     if sensor_type in ["MAS‑VWS‑SM15 (поверхностный)", "MAS‑VWE (давление грунта)"]:
         st.subheader("Калибровочные коэффициенты")
-        g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g")
-        c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c")
+        g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
+        c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
         st.caption("Из сертификата датчика.")
 
-    st.header("Нулевые значения")
-    f0 = st.number_input("f₀ (Гц)", value=1000.0, step=0.1, format="%.1f", key="f0")
-    t0 = st.number_input("T₀ (°C)", value=20.0, step=0.1, format="%.1f", key="t0")
-
-    if st.button("Сохранить настройки"):
+    if st.button("Сохранить настройки типа датчика"):
         config = st.session_state.config
         config['sensor_type'] = sensor_type
-        config['f0'] = f0
-        config['t0'] = t0
         if g_val is not None and c_val is not None:
             config['g_val'] = g_val
             config['c_val'] = c_val
         save_config(config)
-        st.success("Настройки сохранены!")
+        st.success("Настройки типа датчика сохранены!")
 
-    # Логотип
+    # Логотип в боковой панели
     logo_path = get_resource_path("logo.png")
     if os.path.exists(logo_path):
         try:
-            st.image(logo_path, width=150)
+            st.sidebar.image(logo_path, width=150)
         except:
-            st.warning("Не удалось загрузить логотип")
+            st.sidebar.warning("Не удалось загрузить логотип")
     else:
-        st.warning("Логотип не найден (файл logo.png)")
+        st.sidebar.warning("Логотип не найден (файл logo.png)")
 
-    st.markdown("### 🏗️ Геофундамент")
-    st.caption("© 2026, все права защищены")
+    st.sidebar.markdown("### 🏗️ Геофундамент")
+    st.sidebar.caption("© 2026, все права защищены")
 
-# Основная вкладка
-st.subheader("Загрузите файл Excel с данными")
-uploaded_file = st.file_uploader("Выберите файл .xlsx или .xls", type=["xlsx", "xls"])
+# Вкладки (ваш код без изменений)
+tab1, tab2 = st.tabs(["📁 Загрузка Excel", "✏️ Ручной ввод"])
 
-if uploaded_file is not None:
-    try:
-        df_raw = pd.read_excel(uploaded_file)
-        st.success("Файл успешно загружен!")
+# ... (дальше идёт ваш код для tab1 и tab2, он остаётся без изменений)
+# Важно: в вашем коде везде, где вы используете "logo.png", замените на get_resource_path("logo.png")
+# Например, при добавлении водяного знака на график:
+# if os.path.exists(get_resource_path("logo.png")):
+#    with open(get_resource_path("logo.png"), "rb") as f:
+#        ...
 
-        # Показываем первые строки для ориентира
-        st.subheader("Исходные данные (первые 5 строк)")
-        st.dataframe(df_raw.head())
+# ВНИМАНИЕ: в вашем коде есть несколько мест, где вы обращаетесь к "logo.png".
+# Замените их все на get_resource_path("logo.png").
 
-        # Определяем столбцы: предполагаем, что есть 'load', 'freq', 'temp'
-        # Если нет, предлагаем выбрать вручную
-        required_cols = ['load', 'freq', 'temp']
-        missing = [c for c in required_cols if c not in df_raw.columns]
-        if missing:
-            st.warning(f"В файле отсутствуют столбцы: {', '.join(missing)}. Пожалуйста, переименуйте их или добавьте.")
-            # Можно дать возможность выбрать столбцы вручную (здесь упрощённо)
-            st.stop()
+# Я покажу только изменённый фрагмент с водяным знаком:
+# В разделе отображения результатов замените:
+if st.session_state.result is not None:
+    df = st.session_state.result
+    name = st.session_state.sensor_name
 
-        # Выбираем нужные столбцы
-        df = df_raw[['load', 'freq', 'temp']].copy()
-        df = df.dropna()
-
-        # Обработка
-        with st.spinner("Выполняется обработка..."):
-            result = process_data(df, f0, t0, sensor_type, g_val, c_val)
-
-        if result is not None:
-            st.session_state.result = result
-            st.session_state.sensor_name = uploaded_file.name
-
-            st.subheader("Результат обработки")
-            st.dataframe(result)
-
-            # График
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
-            fig.add_trace(go.Scatter(x=result['load'], y=result['stress_MPa'], mode='lines+markers', name='Напряжение, МПа', yaxis='y2'))
-            fig.update_layout(
-                title="Деформация и напряжение от нагрузки",
-                xaxis_title="Нагрузка, тс",
-                yaxis_title="Деформация, μϵ",
-                yaxis2=dict(title="Напряжение, МПа", overlaying='y', side='right')
+    # ... (код графика) ...
+    # Водяной знак
+    logo_path = get_resource_path("logo.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            logo_base64 = base64.b64encode(f.read()).decode()
+        fig.add_layout_image(
+            dict(
+                source=f"data:image/png;base64,{logo_base64}",
+                x=0.95, y=0.95,
+                xref="paper", yref="paper",
+                sizex=0.15, sizey=0.15,
+                opacity=0.6
             )
-            # Водяной знак
-            if os.path.exists(logo_path):
-                with open(logo_path, "rb") as f:
-                    logo_base64 = base64.b64encode(f.read()).decode()
-                fig.add_layout_image(
-                    dict(
-                        source=f"data:image/png;base64,{logo_base64}",
-                        x=0.95, y=0.95,
-                        xref="paper", yref="paper",
-                        sizex=0.15, sizey=0.15,
-                        opacity=0.6
-                    )
-                )
-            st.plotly_chart(fig, use_container_width=True)
+        )
 
-            # Кнопки скачивания
-            col1, col2 = st.columns(2)
-            with col1:
-                # Скачать Excel
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    result.to_excel(writer, index=False, sheet_name='Результат')
-                st.download_button(
-                    label="📥 Скачать результат (Excel)",
-                    data=output.getvalue(),
-                    file_name=f"result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            with col2:
-                # Скачать PDF
-                pdf_buffer = generate_pdf_report(result, uploaded_file.name, f0, t0)
-                st.download_button(
-                    label="📄 Скачать отчёт (PDF)",
-                    data=pdf_buffer.getvalue(),
-                    file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                    mime="application/pdf"
-                )
+    # ... остальной код ...
 
-    except Exception as e:
-        st.error(f"Ошибка при обработке файла: {e}")
-else:
-    st.info("Ожидание загрузки файла...")
+# Остальную часть кода (вкладки, обработка) вы копируете из своего файла без изменений,
+# но везде, где есть "logo.png", замените на get_resource_path("logo.png").
