@@ -1,9 +1,8 @@
-import flask
-import pandas
-import numpy
-import scipy.optimize
-import openpyxl
-import xlsxwriter
-import plotly
-import matplotlib
-import statsmodels
+streamlit
+pandas
+numpy>=1.26.0
+scipy
+openpyxl
+xlsxwriter
+plotly
+matplotlib
