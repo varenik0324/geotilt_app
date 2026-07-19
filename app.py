@@ -62,10 +62,9 @@ if 'config' not in st.session_state:
     st.session_state.config = load_config()
 
 # ------------------------------------------------------------
-# Функция автоопределения столбцов
+# Автоопределение столбцов
 # ------------------------------------------------------------
 def auto_detect_columns(df):
-    """Ищет в датафрейме столбцы, содержащие ключевые слова, и переименовывает их в load, freq, temp."""
     col_map = {}
     for col in df.columns:
         col_lower = col.lower()
@@ -75,11 +74,10 @@ def auto_detect_columns(df):
             col_map[col] = 'freq'
         elif re.search(r'температур|temp', col_lower):
             col_map[col] = 'temp'
-    # Если какие-то не найдены, оставляем как есть (потом будет ошибка)
     return df.rename(columns=col_map)
 
 # ------------------------------------------------------------
-# Функция обработки данных
+# Обработка данных
 # ------------------------------------------------------------
 def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     if df.empty:
@@ -109,7 +107,7 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df
 
 # ------------------------------------------------------------
-# Генерация PDF-отчёта
+# PDF-отчёт
 # ------------------------------------------------------------
 def generate_pdf_report(df, sensor_name, f0, t0):
     try:
@@ -202,7 +200,7 @@ def generate_pdf_report(df, sensor_name, f0, t0):
     return buffer
 
 # ------------------------------------------------------------
-# Интерфейс Streamlit
+# Streamlit UI
 # ------------------------------------------------------------
 st.set_page_config(page_title="Анализ датчиков", layout="wide")
 st.title("📊 Обработка данных тензодатчиков")
@@ -256,7 +254,7 @@ with st.sidebar:
     st.markdown("### 🏗️ Геофундамент")
     st.caption("© 2026, все права защищены")
 
-# Основная вкладка загрузки
+# Основная часть – загрузка файла
 st.subheader("📂 Загрузите файл Excel с данными")
 uploaded_file = st.file_uploader("Выберите файл .xlsx или .xls", type=["xlsx", "xls"])
 
@@ -267,13 +265,14 @@ if uploaded_file is not None:
         st.write("Исходные столбцы:", df_raw.columns.tolist())
         st.dataframe(df_raw.head())
 
-        # Автоопределение столбцов
         df_mapped = auto_detect_columns(df_raw)
-        # Проверяем, что необходимые столбцы теперь есть
         required = ['load', 'freq', 'temp']
         missing = [col for col in required if col not in df_mapped.columns]
         if missing:
-            st.error(f"Не удалось автоматически определить столбцы: {', '.join(missing)}. Пожалуйста, переименуйте их вручную в Excel на 'load', 'freq', 'temp' и загрузите снова.")
+            st.error(
+                f"Не удалось автоматически определить столбцы: {', '.join(missing)}. "
+                "Пожалуйста, переименуйте их вручную в Excel на 'load', 'freq', 'temp' и загрузите снова."
+            )
             st.stop()
 
         df = df_mapped[required].copy().dropna()
@@ -281,7 +280,6 @@ if uploaded_file is not None:
             st.warning("После удаления пустых строк данных не осталось.")
             st.stop()
 
-        # Обработка
         with st.spinner("Обработка данных..."):
             result = process_data(df, f0, t0, sensor_type, g_val, c_val)
 
@@ -310,7 +308,7 @@ if uploaded_file is not None:
                 )
             st.plotly_chart(fig, use_container_width=True)
 
-            # Кнопки скачивания
+            # Скачивание
             col1, col2 = st.columns(2)
             with col1:
                 output = io.BytesIO()
@@ -330,10 +328,6 @@ if uploaded_file is not None:
                     file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                     mime="application/pdf"
                 )
-    except Exception as e:
-        st.error(f"Ошибка при обработке: {e}")
-else:
-    st.info("👆 Загрузите Excel-файл для начала работы.")
     except Exception as e:
         st.error(f"Ошибка при обработке: {e}")
 else:
