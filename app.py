@@ -249,13 +249,15 @@ if uploaded_file is not None:
     try:
         df_raw = pd.read_excel(uploaded_file)
         st.success("Файл успешно загружен!")
+
+        # Приводим имена столбцов к строкам (на случай если они числа)
+        df_raw.columns = [str(col) for col in df_raw.columns]
         st.write("Исходные столбцы:", df_raw.columns.tolist())
         st.dataframe(df_raw.head())
 
         # -----------------------------------------------------------------
         # 1. Автоматическое определение столбцов с возможностью ручного выбора
         # -----------------------------------------------------------------
-        # Автоопределение
         col_map = {}
         for col in df_raw.columns:
             col_lower = col.lower()
@@ -266,15 +268,14 @@ if uploaded_file is not None:
             elif re.search(r'температур|temp', col_lower):
                 col_map[col] = 'temp'
 
-        # Предложим найденные или None
         default_load = next((c for c in col_map if col_map[c] == 'load'), None)
         default_freq = next((c for c in col_map if col_map[c] == 'freq'), None)
         default_temp = next((c for c in col_map if col_map[c] == 'temp'), None)
 
         st.subheader("🔧 Сопоставление столбцов")
-        col_load = st.selectbox("Выберите столбец с нагрузкой (load)", options=[None] + df_raw.columns.tolist(), index=0 if default_load is None else df_raw.columns.get_loc(default_load)+1)
-        col_freq = st.selectbox("Выберите столбец с частотой (freq)", options=[None] + df_raw.columns.tolist(), index=0 if default_freq is None else df_raw.columns.get_loc(default_freq)+1)
-        col_temp = st.selectbox("Выберите столбец с температурой (temp)", options=[None] + df_raw.columns.tolist(), index=0 if default_temp is None else df_raw.columns.get_loc(default_temp)+1)
+        col_load = st.selectbox("Выберите столбец с нагрузкой (load)", options=[None] + df_raw.columns.tolist(), index=0 if default_load is None else df_raw.columns.tolist().index(default_load)+1)
+        col_freq = st.selectbox("Выберите столбец с частотой (freq)", options=[None] + df_raw.columns.tolist(), index=0 if default_freq is None else df_raw.columns.tolist().index(default_freq)+1)
+        col_temp = st.selectbox("Выберите столбец с температурой (temp)", options=[None] + df_raw.columns.tolist(), index=0 if default_temp is None else df_raw.columns.tolist().index(default_temp)+1)
 
         if col_load is None or col_freq is None or col_temp is None:
             st.warning("Пожалуйста, выберите все три столбца.")
@@ -314,7 +315,6 @@ if uploaded_file is not None:
                 yaxis_title="Деформация, μϵ",
                 template="plotly_white"
             )
-            # Добавляем водяной знак логотипа
             if os.path.exists(logo_path):
                 with open(logo_path, "rb") as f:
                     logo_base64 = base64.b64encode(f.read()).decode()
