@@ -13,9 +13,10 @@ from reportlab.lib.pagesizes import A4
 from PIL import Image
 import tempfile
 import base64
+import re
 
 # ------------------------------------------------------------
-# Путь к ресурсам (работает в .exe и в обычном режиме)
+# Путь к ресурсам
 # ------------------------------------------------------------
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
@@ -59,6 +60,23 @@ if 'sensor_name' not in st.session_state:
     st.session_state.sensor_name = ""
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
+
+# ------------------------------------------------------------
+# Функция автоопределения столбцов
+# ------------------------------------------------------------
+def auto_detect_columns(df):
+    """Ищет в датафрейме столбцы, содержащие ключевые слова, и переименовывает их в load, freq, temp."""
+    col_map = {}
+    for col in df.columns:
+        col_lower = col.lower()
+        if re.search(r'нагрузк|load', col_lower):
+            col_map[col] = 'load'
+        elif re.search(r'частот|freq|hz', col_lower):
+            col_map[col] = 'freq'
+        elif re.search(r'температур|temp', col_lower):
+            col_map[col] = 'temp'
+    # Если какие-то не найдены, оставляем как есть (потом будет ошибка)
+    return df.rename(columns=col_map)
 
 # ------------------------------------------------------------
 # Функция обработки данных
@@ -226,7 +244,6 @@ with st.sidebar:
         save_config(config)
         st.success("Настройки сохранены!")
 
-    # Логотип
     logo_path = get_resource_path("logo.png")
     if os.path.exists(logo_path):
         try:
@@ -247,16 +264,19 @@ if uploaded_file is not None:
     try:
         df_raw = pd.read_excel(uploaded_file)
         st.success("Файл успешно загружен!")
+        st.write("Исходные столбцы:", df_raw.columns.tolist())
         st.dataframe(df_raw.head())
 
-        # Проверяем наличие столбцов load, freq, temp
+        # Автоопределение столбцов
+        df_mapped = auto_detect_columns(df_raw)
+        # Проверяем, что необходимые столбцы теперь есть
         required = ['load', 'freq', 'temp']
-        missing = [col for col in required if col not in df_raw.columns]
+        missing = [col for col in required if col not in df_mapped.columns]
         if missing:
-            st.error(f"В файле отсутствуют столбцы: {', '.join(missing)}. Пожалуйста, переименуйте их или добавьте.")
+            st.error(f"Не удалось автоматически определить столбцы: {', '.join(missing)}. Пожалуйста, переименуйте их вручную в Excel на 'load', 'freq', 'temp' и загрузите снова.")
             st.stop()
 
-        df = df_raw[required].copy().dropna()
+        df = df_mapped[required].copy().dropna()
         if df.empty:
             st.warning("После удаления пустых строк данных не осталось.")
             st.stop()
@@ -275,12 +295,7 @@ if uploaded_file is not None:
             # График
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
-            fig.update_layout(
-                title="Деформация от нагрузки",
-                xaxis_title="Нагрузка, тс",
-                yaxis_title="Деформация, μϵ"
-            )
-            # Водяной знак
+            fig.update_layout(title="Деформация от нагрузки", xaxis_title="Нагрузка, тс", yaxis_title="Деформация, μϵ")
             if os.path.exists(logo_path):
                 with open(logo_path, "rb") as f:
                     logo_base64 = base64.b64encode(f.read()).decode()
@@ -298,7 +313,6 @@ if uploaded_file is not None:
             # Кнопки скачивания
             col1, col2 = st.columns(2)
             with col1:
-                # Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     result.to_excel(writer, index=False, sheet_name='Результат')
@@ -309,7 +323,6 @@ if uploaded_file is not None:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             with col2:
-                # PDF
                 pdf_buffer = generate_pdf_report(result, uploaded_file.name, f0, t0)
                 st.download_button(
                     label="📄 Скачать отчёт (PDF)",
@@ -317,6 +330,10 @@ if uploaded_file is not None:
                     file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                     mime="application/pdf"
                 )
+    except Exception as e:
+        st.error(f"Ошибка при обработке: {e}")
+else:
+    st.info("👆 Загрузите Excel-файл для начала работы.")
     except Exception as e:
         st.error(f"Ошибка при обработке: {e}")
 else:
