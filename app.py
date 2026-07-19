@@ -16,7 +16,7 @@ import base64
 import re
 
 # ------------------------------------------------------------
-# Путь к ресурсам
+# Путь к ресурсам (для .exe и для разработки)
 # ------------------------------------------------------------
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
@@ -60,21 +60,8 @@ if 'sensor_name' not in st.session_state:
     st.session_state.sensor_name = ""
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
-
-# ------------------------------------------------------------
-# Автоопределение столбцов
-# ------------------------------------------------------------
-def auto_detect_columns(df):
-    col_map = {}
-    for col in df.columns:
-        col_lower = col.lower()
-        if re.search(r'нагрузк|load', col_lower):
-            col_map[col] = 'load'
-        elif re.search(r'частот|freq|hz', col_lower):
-            col_map[col] = 'freq'
-        elif re.search(r'температур|temp', col_lower):
-            col_map[col] = 'temp'
-    return df.rename(columns=col_map)
+if 'selected_columns' not in st.session_state:
+    st.session_state.selected_columns = {}
 
 # ------------------------------------------------------------
 # Обработка данных
@@ -107,7 +94,7 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df
 
 # ------------------------------------------------------------
-# PDF-отчёт
+# PDF-отчёт (с использованием Plotly или Matplotlib)
 # ------------------------------------------------------------
 def generate_pdf_report(df, sensor_name, f0, t0):
     try:
@@ -205,9 +192,9 @@ def generate_pdf_report(df, sensor_name, f0, t0):
 st.set_page_config(page_title="Анализ датчиков", layout="wide")
 st.title("📊 Обработка данных тензодатчиков")
 
-# Боковая панель
+# Боковая панель с настройками
 with st.sidebar:
-    st.header("Настройки")
+    st.header("Настройки датчика")
     sensor_type = st.selectbox(
         "Тип датчика",
         [
@@ -254,7 +241,7 @@ with st.sidebar:
     st.markdown("### 🏗️ Геофундамент")
     st.caption("© 2026, все права защищены")
 
-# Основная часть – загрузка файла
+# Основная область – загрузка и обработка
 st.subheader("📂 Загрузите файл Excel с данными")
 uploaded_file = st.file_uploader("Выберите файл .xlsx или .xls", type=["xlsx", "xls"])
 
@@ -265,21 +252,47 @@ if uploaded_file is not None:
         st.write("Исходные столбцы:", df_raw.columns.tolist())
         st.dataframe(df_raw.head())
 
-        df_mapped = auto_detect_columns(df_raw)
-        required = ['load', 'freq', 'temp']
-        missing = [col for col in required if col not in df_mapped.columns]
-        if missing:
-            st.error(
-                f"Не удалось автоматически определить столбцы: {', '.join(missing)}. "
-                "Пожалуйста, переименуйте их вручную в Excel на 'load', 'freq', 'temp' и загрузите снова."
-            )
+        # -----------------------------------------------------------------
+        # 1. Автоматическое определение столбцов с возможностью ручного выбора
+        # -----------------------------------------------------------------
+        # Автоопределение
+        col_map = {}
+        for col in df_raw.columns:
+            col_lower = col.lower()
+            if re.search(r'нагрузк|load', col_lower):
+                col_map[col] = 'load'
+            elif re.search(r'частот|freq|hz', col_lower):
+                col_map[col] = 'freq'
+            elif re.search(r'температур|temp', col_lower):
+                col_map[col] = 'temp'
+
+        # Предложим найденные или None
+        default_load = next((c for c in col_map if col_map[c] == 'load'), None)
+        default_freq = next((c for c in col_map if col_map[c] == 'freq'), None)
+        default_temp = next((c for c in col_map if col_map[c] == 'temp'), None)
+
+        st.subheader("🔧 Сопоставление столбцов")
+        col_load = st.selectbox("Выберите столбец с нагрузкой (load)", options=[None] + df_raw.columns.tolist(), index=0 if default_load is None else df_raw.columns.get_loc(default_load)+1)
+        col_freq = st.selectbox("Выберите столбец с частотой (freq)", options=[None] + df_raw.columns.tolist(), index=0 if default_freq is None else df_raw.columns.get_loc(default_freq)+1)
+        col_temp = st.selectbox("Выберите столбец с температурой (temp)", options=[None] + df_raw.columns.tolist(), index=0 if default_temp is None else df_raw.columns.get_loc(default_temp)+1)
+
+        if col_load is None or col_freq is None or col_temp is None:
+            st.warning("Пожалуйста, выберите все три столбца.")
             st.stop()
 
-        df = df_mapped[required].copy().dropna()
+        # Формируем рабочий DataFrame с переименованными колонками
+        df_mapped = df_raw[[col_load, col_freq, col_temp]].copy()
+        df_mapped.columns = ['load', 'freq', 'temp']
+
+        # Удаляем строки с NaN
+        df = df_mapped.dropna()
         if df.empty:
             st.warning("После удаления пустых строк данных не осталось.")
             st.stop()
 
+        # -----------------------------------------------------------------
+        # 2. Обработка данных
+        # -----------------------------------------------------------------
         with st.spinner("Обработка данных..."):
             result = process_data(df, f0, t0, sensor_type, g_val, c_val)
 
@@ -290,10 +303,18 @@ if uploaded_file is not None:
             st.subheader("✅ Результат обработки")
             st.dataframe(result)
 
-            # График
+            # -----------------------------------------------------------------
+            # 3. График (всегда отображается)
+            # -----------------------------------------------------------------
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
-            fig.update_layout(title="Деформация от нагрузки", xaxis_title="Нагрузка, тс", yaxis_title="Деформация, μϵ")
+            fig.update_layout(
+                title="Деформация от нагрузки",
+                xaxis_title="Нагрузка, тс",
+                yaxis_title="Деформация, μϵ",
+                template="plotly_white"
+            )
+            # Добавляем водяной знак логотипа
             if os.path.exists(logo_path):
                 with open(logo_path, "rb") as f:
                     logo_base64 = base64.b64encode(f.read()).decode()
@@ -308,7 +329,9 @@ if uploaded_file is not None:
                 )
             st.plotly_chart(fig, use_container_width=True)
 
-            # Скачивание
+            # -----------------------------------------------------------------
+            # 4. Скачивание результатов
+            # -----------------------------------------------------------------
             col1, col2 = st.columns(2)
             with col1:
                 output = io.BytesIO()
@@ -328,6 +351,7 @@ if uploaded_file is not None:
                     file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                     mime="application/pdf"
                 )
+
     except Exception as e:
         st.error(f"Ошибка при обработке: {e}")
 else:
