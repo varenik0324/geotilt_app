@@ -1,4 +1,5 @@
 flask
-openpyxl
 pandas
 numpy>=1.26.0
+openpyxl
+scipy
