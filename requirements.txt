@@ -1,5 +1,9 @@
-flask
-pandas
-numpy>=1.26.0
-openpyxl
-scipy
+import flask
+import pandas
+import numpy
+import scipy.optimize
+import openpyxl
+import xlsxwriter
+import plotly
+import matplotlib
+import statsmodels
