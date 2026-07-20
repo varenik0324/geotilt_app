@@ -286,7 +286,7 @@ def display_results(result, stats, sensor_name, f0, t0, key_suffix=""):
         )
 
 # ------------------------------------------------------------
-# МОДУЛЬ: Парсинг свайных испытаний (улучшенная версия)
+# МОДУЛЬ: Парсинг свайных испытаний (улучшенный и надёжный)
 # ------------------------------------------------------------
 PILE_A = 6.51e-08
 PILE_B = -0.02931
@@ -296,8 +296,8 @@ PILE_T_REF = 23.9
 
 def parse_pile_data(file_bytes):
     """
-    Адаптивный парсинг файлов испытаний свай.
-    Возвращает результаты и список отладочных сообщений.
+    Улучшенный парсинг файлов испытаний свай.
+    Возвращает словарь результатов и список отладочных сообщений.
     """
     debug = []
     xl = pd.ExcelFile(file_bytes)
@@ -345,14 +345,12 @@ def parse_pile_data(file_bytes):
     df_zero = pd.read_excel(file_bytes, sheet_name=zero_sheet, header=None)
     zero_data = {}
 
-    # Ищем строку с заголовками "№ датчика", "Частота", "Температура"
+    # Ищем заголовки
     start_row = None
     freq_col, temp_col = None, None
-
     for idx, row in df_zero.iterrows():
         row_str = ' '.join(str(cell) for cell in row if pd.notna(cell))
         if 'Частота' in row_str and 'Температура' in row_str:
-            # Определяем колонки
             for i, cell in enumerate(row):
                 if isinstance(cell, str):
                     if 'Частота' in cell:
@@ -363,12 +361,12 @@ def parse_pile_data(file_bytes):
             break
 
     if start_row is None:
-        # Если не нашли заголовки, ищем первую строку с числовыми значениями и ключевыми словами
+        # Если не нашли, ищем строки с датчиками по шаблону
         for idx, row in df_zero.iterrows():
             first = str(row[0]).strip()
             if first and re.search(r'\d\s*[й]?\s*(верх|сред|низ)', first, re.IGNORECASE):
                 start_row = idx
-                # Попробуем определить колонки по наличию чисел
+                # Определяем колонки по наличию чисел
                 for i in range(1, len(row)):
                     if pd.notna(row[i]) and isinstance(row[i], (int, float)):
                         if freq_col is None:
@@ -386,7 +384,6 @@ def parse_pile_data(file_bytes):
 
     debug.append(f"📌 Нулевые: start_row={start_row}, freq_col={freq_col}, temp_col={temp_col}")
 
-    # Собираем данные
     for idx in range(start_row, len(df_zero)):
         row = df_zero.iloc[idx]
         if pd.isna(row[0]) or (isinstance(row[0], str) and 'уровень' in row[0].lower()):
@@ -412,22 +409,17 @@ def parse_pile_data(file_bytes):
     header_row = None
     for idx, row in df_test.iterrows():
         row_str = ' '.join(str(cell) for cell in row if pd.notna(cell))
-        # Проверяем наличие ключевых слов
-        if ('Время' in row_str and 'Нагрузка' in row_str and 'Давление' in row_str) or \
-           ('время' in row_str.lower() and 'нагрузка' in row_str.lower() and 'давление' in row_str.lower()):
+        if 'Время' in row_str and 'Нагрузка' in row_str and 'Давление' in row_str:
             header_row = idx
             break
-
     if header_row is None:
-        # Попробуем найти строку, где есть и "Ступень"
+        # Ищем по ключевым словам без учёта регистра
         for idx, row in df_test.iterrows():
-            row_str = ' '.join(str(cell) for cell in row if pd.notna(cell))
-            if 'Ступень' in row_str and ('Нагрузка' in row_str or 'Давление' in row_str):
+            row_str_lower = ' '.join(str(cell).lower() for cell in row if pd.notna(cell))
+            if 'время' in row_str_lower and 'нагрузка' in row_str_lower and 'давление' in row_str_lower:
                 header_row = idx
                 break
-
     debug.append(f"📌 Строка заголовков испытаний: {header_row}")
-
     if header_row is None:
         raise ValueError("Не удалось найти заголовки в листе испытаний.")
 
@@ -444,7 +436,6 @@ def parse_pile_data(file_bytes):
                 current_step = int(match.group(1))
                 step_columns[current_step] = {}
         elif current_step is not None and h:
-            # Сохраняем индексы столбцов для этого шага
             if 'Время' in h:
                 step_columns[current_step]['Время'] = i
             elif 'Нагрузка' in h:
@@ -456,7 +447,7 @@ def parse_pile_data(file_bytes):
             elif 'Температура' in h:
                 step_columns[current_step]['Температура'] = i
 
-    # Если не нашли ступени, создадим их по порядку следования колонок
+    # Если ступени не найдены, создаём виртуальные по порядку
     if not step_columns:
         debug.append("⚠️ Ступени не обнаружены, создаём одну группу")
         step_columns[1] = {}
@@ -479,24 +470,18 @@ def parse_pile_data(file_bytes):
     for idx in range(header_row + 1, len(df_test)):
         row = df_test.iloc[idx]
         first_cell = str(row[0]).strip()
-        # Ищем цифру и одно из ключевых слов в первом столбце
-        if first_cell and re.search(r'\d\s*[й]?\s*(верх|сред|низ|Верх|Сред|Низ)', first_cell):
+        if first_cell and re.search(r'\d\s*[й]?\s*(верх|сред|низ)', first_cell, re.IGNORECASE):
             sensor_rows.append(idx)
             continue
-        # Если первый столбец пуст, но есть числа в других колонках, пропускаем
-        if not first_cell:
-            continue
-        # Если в первом столбце просто цифра, но во всей строке есть что-то похожее на датчик
-        if first_cell.isdigit():
-            # Проверим, есть ли в строке значения, возможно, это датчик без ключевого слова
-            # Для безопасности добавим
+        # Если в первом столбце просто число, тоже пробуем добавить
+        if first_cell and re.match(r'^\d+$', first_cell):
             sensor_rows.append(idx)
 
     debug.append(f"🔎 Найдено строк датчиков: {len(sensor_rows)}")
     if sensor_rows:
         debug.append(f"Примеры: {[str(df_test.iloc[i,0]).strip() for i in sensor_rows[:3]]}")
 
-    # ---------- 6. Сбор данных для каждого датчика ----------
+    # ---------- 6. Сбор данных ----------
     results = {}
     for idx in sensor_rows:
         sensor_name = str(df_test.iloc[idx, 0]).strip()
@@ -520,7 +505,6 @@ def parse_pile_data(file_bytes):
             })
         if rows:
             df_sensor = pd.DataFrame(rows)
-            # Добавляем нулевые значения
             if sensor_name in zero_data:
                 f0 = zero_data[sensor_name]['f0']
                 T0 = zero_data[sensor_name]['T0']
@@ -535,7 +519,6 @@ def parse_pile_data(file_bytes):
                         df_sensor.at[i, 'Давление_расч, МПа'] = Psi * 0.00689475729317831
                 results[sensor_name] = df_sensor
             else:
-                # Если нет нулевых значений, всё равно добавляем
                 results[sensor_name] = df_sensor
 
     return results, debug
