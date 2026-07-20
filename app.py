@@ -19,7 +19,7 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # ------------------------------------------------------------
-# Путь к ресурсам (для .exe и для разработки)
+# Путь к ресурсам
 # ------------------------------------------------------------
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
@@ -286,6 +286,247 @@ def display_results(result, stats, sensor_name, f0, t0, key_suffix=""):
         )
 
 # ------------------------------------------------------------
+# МОДУЛЬ: Парсинг свайных испытаний (УНИВЕРСАЛЬНЫЙ)
+# ------------------------------------------------------------
+PILE_A = 6.51e-08
+PILE_B = -0.02931
+PILE_C = 248.4372
+PILE_K = -0.036375
+PILE_T_REF = 23.9
+
+def parse_pile_data(file_bytes):
+    """
+    Универсальный парсинг файлов испытаний свай.
+    Возвращает словарь результатов и список отладочных сообщений.
+    """
+    debug = []
+    xl = pd.ExcelFile(file_bytes)
+    sheet_names = xl.sheet_names
+    debug.append(f"📋 Найдены листы: {sheet_names}")
+
+    # ---------- 1. Поиск нулевого листа ----------
+    zero_sheet = None
+    for name in sheet_names:
+        if 'свая' in name.lower() and not 'испытания' in name.lower():
+            zero_sheet = name
+            break
+    if zero_sheet is None:
+        for name in sheet_names:
+            df_sample = pd.read_excel(file_bytes, sheet_name=name, header=None, nrows=20)
+            for idx, row in df_sample.iterrows():
+                if any('Частота' in str(cell) for cell in row) and any('Температура' in str(cell) for cell in row):
+                    zero_sheet = name
+                    break
+            if zero_sheet:
+                break
+    debug.append(f"🔍 Нулевой лист: {zero_sheet}")
+
+    # ---------- 2. Поиск листа испытаний ----------
+    test_sheet = None
+    for name in sheet_names:
+        if 'испытания' in name.lower() or 'испыт' in name.lower():
+            test_sheet = name
+            break
+    if test_sheet is None:
+        for name in sheet_names:
+            df_sample = pd.read_excel(file_bytes, sheet_name=name, header=None, nrows=20)
+            for idx, row in df_sample.iterrows():
+                if any('Нагрузка' in str(cell) for cell in row) and any('Давление' in str(cell) for cell in row):
+                    test_sheet = name
+                    break
+            if test_sheet:
+                break
+    debug.append(f"🔍 Лист испытаний: {test_sheet}")
+
+    if zero_sheet is None or test_sheet is None:
+        raise ValueError(f"Не найдены оба листа. zero={zero_sheet}, test={test_sheet}")
+
+    # ---------- 3. Парсинг нулевых значений ----------
+    df_zero = pd.read_excel(file_bytes, sheet_name=zero_sheet, header=None)
+    zero_data = {}
+
+    # Ищем строку с заголовками
+    start_row = None
+    freq_col, temp_col = None, None
+    for idx, row in df_zero.iterrows():
+        row_str = ' '.join(str(cell) for cell in row if pd.notna(cell))
+        if 'Частота' in row_str and 'Температура' in row_str:
+            for i, cell in enumerate(row):
+                if isinstance(cell, str):
+                    if 'Частота' in cell:
+                        freq_col = i
+                    if 'Температура' in cell:
+                        temp_col = i
+            start_row = idx + 1
+            break
+
+    if start_row is None:
+        # Если не нашли, ищем строки с датчиками по шаблону
+        for idx, row in df_zero.iterrows():
+            first = str(row[0]).strip()
+            if first and re.search(r'\d\s*[й]?\s*(верх|сред|низ)', first, re.IGNORECASE):
+                start_row = idx
+                # Определяем колонки по наличию чисел
+                for i in range(1, len(row)):
+                    if pd.notna(row[i]) and isinstance(row[i], (int, float)):
+                        if freq_col is None:
+                            freq_col = i
+                        elif temp_col is None:
+                            temp_col = i
+                            break
+                break
+    if start_row is None:
+        start_row = 0
+    if freq_col is None:
+        freq_col = 1
+    if temp_col is None:
+        temp_col = 2
+
+    debug.append(f"📌 Нулевые: start_row={start_row}, freq_col={freq_col}, temp_col={temp_col}")
+
+    for idx in range(start_row, len(df_zero)):
+        row = df_zero.iloc[idx]
+        first_cell = str(row[0]).strip()
+        if not first_cell or 'уровень' in first_cell.lower():
+            continue
+        try:
+            freq_val = float(row[freq_col]) if pd.notna(row[freq_col]) else None
+            temp_val = float(row[temp_col]) if pd.notna(row[temp_col]) else None
+        except:
+            continue
+        if freq_val is not None and temp_val is not None:
+            sensor_name = first_cell
+            zero_data[sensor_name] = {'f0': freq_val, 'T0': temp_val}
+
+    debug.append(f"📈 Найдено нулевых записей: {len(zero_data)}")
+    if zero_data:
+        debug.append(f"Примеры: {list(zero_data.keys())[:3]}")
+
+    # ---------- 4. Парсинг испытаний ----------
+    df_test = pd.read_excel(file_bytes, sheet_name=test_sheet, header=None)
+
+    # Ищем строку заголовков
+    header_row = None
+    for idx, row in df_test.iterrows():
+        row_str = ' '.join(str(cell) for cell in row if pd.notna(cell))
+        if ('Время' in row_str and 'Нагрузка' in row_str and 'Давление' in row_str) or \
+           ('время' in row_str.lower() and 'нагрузка' in row_str.lower() and 'давление' in row_str.lower()):
+            header_row = idx
+            break
+    debug.append(f"📌 Строка заголовков испытаний: {header_row}")
+
+    if header_row is None:
+        raise ValueError("Не удалось найти заголовки в листе испытаний.")
+
+    # Определяем ступени
+    # Ищем группы колонок по 5 (Время, Нагрузка, Давление, Частота, Температура)
+    # или по наличию "Ступень" в заголовке.
+    headers = df_test.iloc[header_row].tolist()
+    headers = [str(h).strip() if pd.notna(h) else '' for h in headers]
+
+    step_columns = {}
+    current_step = None
+    for i, h in enumerate(headers):
+        if 'Ступень' in h:
+            match = re.search(r'Ступень\s*(\d+)', h)
+            if match:
+                current_step = int(match.group(1))
+                step_columns[current_step] = {}
+        elif current_step is not None and h:
+            if 'Время' in h:
+                step_columns[current_step]['Время'] = i
+            elif 'Нагрузка' in h:
+                step_columns[current_step]['Нагрузка'] = i
+            elif 'Давление' in h:
+                step_columns[current_step]['Давление'] = i
+            elif 'Частота' in h:
+                step_columns[current_step]['Частота'] = i
+            elif 'Температура' in h:
+                step_columns[current_step]['Температура'] = i
+
+    # Если не нашли по "Ступень", попробуем найти группы по 5 столбцов, начиная с первого "Время"
+    if not step_columns:
+        debug.append("⚠️ Ступени не обнаружены, ищем группы по 5 колонок")
+        # Найдём все индексы, где заголовок содержит "Время"
+        time_indices = [i for i, h in enumerate(headers) if 'Время' in h]
+        for idx in time_indices:
+            # Проверим, что следующие 4 столбца содержат Нагрузка, Давление, Частота, Температура
+            # (или хотя бы часть)
+            if idx+4 < len(headers):
+                step = len(step_columns) + 1
+                step_columns[step] = {'Время': idx}
+                for j, key in enumerate(['Нагрузка', 'Давление', 'Частота', 'Температура']):
+                    if idx+j+1 < len(headers):
+                        # Проверим, содержит ли заголовок нужное ключевое слово
+                        if key in headers[idx+j+1]:
+                            step_columns[step][key] = idx+j+1
+                        else:
+                            # Если не содержит, попробуем поискать ключевое слово в ближайших столбцах
+                            # (упрощённо: просто пропускаем)
+                            pass
+
+    debug.append(f"🧩 Найдено ступеней: {len(step_columns)}")
+
+    # ---------- 5. Поиск строк датчиков ----------
+    sensor_rows = []
+    for idx in range(header_row + 1, len(df_test)):
+        row = df_test.iloc[idx]
+        first_cell = str(row[0]).strip()
+        if first_cell and re.search(r'\d\s*[й]?\s*(верх|сред|низ)', first_cell, re.IGNORECASE):
+            sensor_rows.append(idx)
+            continue
+        # Если в первом столбце просто число, тоже пробуем добавить
+        if first_cell and re.match(r'^\d+$', first_cell):
+            sensor_rows.append(idx)
+
+    debug.append(f"🔎 Найдено строк датчиков: {len(sensor_rows)}")
+    if sensor_rows:
+        debug.append(f"Примеры: {[str(df_test.iloc[i,0]).strip() for i in sensor_rows[:3]]}")
+
+    # ---------- 6. Сбор данных ----------
+    results = {}
+    for idx in sensor_rows:
+        sensor_name = str(df_test.iloc[idx, 0]).strip()
+        rows = []
+        for step, cols in step_columns.items():
+            if 'Время' not in cols or 'Нагрузка' not in cols or 'Давление' not in cols:
+                continue
+            row_data = df_test.iloc[idx]
+            time_val = row_data[cols['Время']] if cols.get('Время') is not None else None
+            load_val = row_data[cols['Нагрузка']] if cols.get('Нагрузка') is not None else None
+            press_val = row_data[cols['Давление']] if cols.get('Давление') is not None else None
+            freq_val = row_data[cols.get('Частота')] if cols.get('Частота') is not None else None
+            temp_val = row_data[cols.get('Температура')] if cols.get('Температура') is not None else None
+            rows.append({
+                'Время': time_val,
+                'Нагрузка, тс': load_val,
+                'Давление, бар': press_val,
+                'Частота, Гц': freq_val,
+                'Температура, °С': temp_val,
+                'Ступень': step
+            })
+        if rows:
+            df_sensor = pd.DataFrame(rows)
+            # Добавляем нулевые значения, если есть
+            if sensor_name in zero_data:
+                f0 = zero_data[sensor_name]['f0']
+                T0 = zero_data[sensor_name]['T0']
+                df_sensor['Давление_расч, Psi'] = np.nan
+                df_sensor['Давление_расч, МПа'] = np.nan
+                for i, row in df_sensor.iterrows():
+                    f = row['Частота, Гц']
+                    T = row['Температура, °С']
+                    if pd.notna(f) and pd.notna(T):
+                        Psi = PILE_A * (f**2) + PILE_B * f + PILE_C + PILE_K * (T - PILE_T_REF)
+                        df_sensor.at[i, 'Давление_расч, Psi'] = Psi
+                        df_sensor.at[i, 'Давление_расч, МПа'] = Psi * 0.00689475729317831
+                results[sensor_name] = df_sensor
+            else:
+                results[sensor_name] = df_sensor
+
+    return results, debug
+
+# ------------------------------------------------------------
 # Streamlit UI
 # ------------------------------------------------------------
 st.set_page_config(page_title="Анализ датчиков", layout="wide")
@@ -454,6 +695,69 @@ with tab2:
             except Exception as e:
                 st.error(f"Ошибка при обработке: {e}")
 
-# ---------- Вкладка 3: Свайные испытания (временно отключена) ----------
+# ---------- Вкладка 3: Свайные испытания ----------
 with tab3:
-    st.info("🧪 Вкладка «Свайные испытания» временно отключена для отладки. Функционал будет восстановлен в ближайшее время.")
+    st.subheader("📂 Загрузите файл с данными испытаний свай")
+    st.markdown("Файл будет автоматически распознан. Поддерживаются любые структуры с нулевыми значениями и испытаниями.")
+    uploaded_pile = st.file_uploader("Выберите файл .xlsx", type=["xlsx"], key="pile_uploader")
+
+    if uploaded_pile is not None:
+        try:
+            with st.spinner("Парсинг и обработка данных..."):
+                results, debug_msgs = parse_pile_data(uploaded_pile)
+
+            # Отображаем отладку
+            with st.expander("🔍 Отладка парсинга", expanded=True):
+                for msg in debug_msgs:
+                    st.info(msg)
+
+            st.success(f"✅ Обработано датчиков: {len(results)}")
+
+            if not results:
+                st.warning("Датчики не найдены. Проверьте структуру файла и отладочные сообщения.")
+            else:
+                for sensor_name, df in results.items():
+                    with st.expander(f"📊 Датчик: {sensor_name}", expanded=True):
+                        st.dataframe(df)
+
+                        # График: нагрузка vs давление (из файла и расчётное)
+                        if 'Нагрузка, тс' in df.columns:
+                            # Давление из файла (бар) в МПа
+                            if 'Давление, бар' in df.columns:
+                                press_bar = df.dropna(subset=['Нагрузка, тс', 'Давление, бар'])
+                                if not press_bar.empty:
+                                    press_bar['Давление_бар_МПа'] = press_bar['Давление, бар'] * 0.1
+                                    fig = go.Figure()
+                                    fig.add_trace(go.Scatter(x=press_bar['Нагрузка, тс'], y=press_bar['Давление_бар_МПа'],
+                                                             mode='lines+markers', name='Давление (из файла) МПа'))
+                            # Расчётное давление
+                            if 'Давление_расч, МПа' in df.columns:
+                                plot_df = df.dropna(subset=['Нагрузка, тс', 'Давление_расч, МПа'])
+                                if not plot_df.empty:
+                                    if 'fig' not in locals():
+                                        fig = go.Figure()
+                                    fig.add_trace(go.Scatter(x=plot_df['Нагрузка, тс'], y=plot_df['Давление_расч, МПа'],
+                                                             mode='lines+markers', name='Давление (расч.) МПа'))
+                            if 'fig' in locals():
+                                fig.update_layout(
+                                    title=f"Зависимость давления от нагрузки ({sensor_name})",
+                                    xaxis_title="Нагрузка, тс",
+                                    yaxis_title="Давление, МПа",
+                                    template="plotly_white"
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.info("Нет данных для построения графика (нет давления).")
+
+                        # CSV
+                        csv = df.to_csv(index=False, encoding='utf-8-sig')
+                        st.download_button(
+                            label=f"📥 Скачать CSV для {sensor_name}",
+                            data=csv,
+                            file_name=f"{sensor_name}.csv",
+                            mime="text/csv",
+                            key=f"download_csv_{sensor_name}"
+                        )
+
+        except Exception as e:
+            st.error(f"Ошибка обработки: {e}")
