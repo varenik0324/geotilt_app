@@ -19,7 +19,7 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # ------------------------------------------------------------
-# Путь к ресурсам (для .exe и для разработки)
+# Путь к ресурсам
 # ------------------------------------------------------------
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
@@ -29,7 +29,7 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 # ------------------------------------------------------------
-# Константы для тензодатчиков
+# Константы
 # ------------------------------------------------------------
 DEFAULT_K_EM15H = 0.0031559
 DEFAULT_K_SM25H = 0.0035708
@@ -55,7 +55,7 @@ def save_config(config):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 # ------------------------------------------------------------
-# ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ ДАТЧИКОВ (все ключи присутствуют)
+# ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ ДАТЧИКОВ
 # ------------------------------------------------------------
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -68,10 +68,10 @@ SENSOR_SPECS = {
         "temperature_accuracy": "±0.5 °C",
         "waterproof": "≥0.5 МПа",
         "gauge_length": "150 мм",
-        "k_factor": "0.0031559 (для расчёта деформации)",
+        "k_factor": "0.0031559",
         "thermal_expansion_steel": "12.2 μϵ/°C",
-        "thermal_expansion_concrete": "10.0 μϵ/°C (рекомендуется)",
-        "description": "Виброструнный тензометр для измерения деформаций на поверхностях бетонных и стальных конструкций. Встроенный термодатчик позволяет корректировать температурные влияния.",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "description": "Виброструнный тензометр для измерения деформаций на поверхностях бетонных и стальных конструкций.",
         "application": "Мониторинг мостов, зданий, плотин, труб, свай."
     },
     "MAS‑VWS‑SM15 (поверхностный)": {
@@ -86,8 +86,8 @@ SENSOR_SPECS = {
         "gauge_length": "150 мм",
         "k_factor": "G × C (задаётся пользователем)",
         "thermal_expansion_steel": "12.2 μϵ/°C",
-        "thermal_expansion_concrete": "10.0 μϵ/°C (рекомендуется)",
-        "description": "Виброструнный тензометр с длиной базы 150 мм для измерения деформаций на бетонных и стальных поверхностях. Коэффициент G и C берутся из сертификата датчика.",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "description": "Виброструнный тензометр с длиной базы 150 мм для измерения деформаций на бетонных и стальных поверхностях.",
         "application": "Мониторинг строительных конструкций, мостов, тоннелей, свай."
     },
     "MAS‑VWS‑SM25H (поверхностный длинная база)": {
@@ -102,23 +102,23 @@ SENSOR_SPECS = {
         "gauge_length": "129 мм",
         "k_factor": "0.0035708",
         "thermal_expansion_steel": "12.2 μϵ/°C",
-        "thermal_expansion_concrete": "10.0 μϵ/°C (рекомендуется)",
-        "description": "Виброструнный тензометр с длинной базой 129 мм для измерения деформаций на поверхностях бетонных и стальных конструкций. Высокая точность и стабильность.",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "description": "Виброструнный тензометр с длинной базой 129 мм для измерения деформаций на поверхностях бетонных и стальных конструкций.",
         "application": "Мониторинг больших конструкций (плотины, мосты, тоннели)."
     },
     "MAS‑VWE (давление грунта)": {
         "name": "MAS‑VWE (давление грунта)",
         "type": "Виброструнный датчик давления грунта",
-        "measuring_range": "0…350/700/1000/2000/3000 кПа (в зависимости от модели)",
+        "measuring_range": "0…350/700/1000/2000/3000 кПа",
         "accuracy": "0.5% F.S",
         "resolution": "0.01 кПа (по частоте)",
         "temperature_range": "-40…+80 °C",
         "temperature_accuracy": "±0.5 °C (@ -10…70 °C)",
-        "waterproof": "≥1.0 МПа (1.2 × номинальное давление)",
+        "waterproof": "≥1.0 МПа",
         "k_factor": "G × C (задаётся пользователем)",
         "thermal_expansion_steel": "12.2 μϵ/°C (для стали)",
         "thermal_expansion_concrete": "10.0 μϵ/°C (для бетона)",
-        "description": "Виброструнный датчик давления грунта для измерения напряжений в массиве грунта, насыпях, основаниях фундаментов. Корпус из нержавеющей стали.",
+        "description": "Виброструнный датчик давления грунта для измерения напряжений в массиве грунта, насыпях, основаниях фундаментов.",
         "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей."
     }
 }
@@ -128,7 +128,6 @@ def get_sensor_specs(sensor_type):
     specs = SENSOR_SPECS.get(sensor_type)
     if not specs:
         return "Характеристики для данного типа датчика не найдены."
-    # Используем .get() для всех ключей, чтобы избежать ошибок
     lines = [
         f"Тип датчика: {specs.get('name', 'не указан')}",
         f"Назначение: {specs.get('type', 'не указано')}",
@@ -151,10 +150,22 @@ def get_sensor_specs(sensor_type):
 # ------------------------------------------------------------
 if 'result' not in st.session_state:
     st.session_state.result = None
+if 'stats' not in st.session_state:
+    st.session_state.stats = None
 if 'sensor_name' not in st.session_state:
     st.session_state.sensor_name = ""
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
+if 'f0' not in st.session_state:
+    st.session_state.f0 = 1000.0
+if 't0' not in st.session_state:
+    st.session_state.t0 = 20.0
+if 'sensor_type' not in st.session_state:
+    st.session_state.sensor_type = "MAS‑VWS‑EM15H (встроенный)"
+if 'g_val' not in st.session_state:
+    st.session_state.g_val = None
+if 'c_val' not in st.session_state:
+    st.session_state.c_val = None
 
 # ------------------------------------------------------------
 # Обработка тензодатчиков
@@ -201,15 +212,15 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df, stats
 
 # ------------------------------------------------------------
-# Генерация отчётов (с добавлением спецификации датчика)
+# Генерация отчётов (используют параметры из сессии)
 # ------------------------------------------------------------
-def generate_excel_report(df, stats, sensor_name, sensor_type):
+def generate_excel_report(df, stats, sensor_name):
+    sensor_type = st.session_state.sensor_type
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Результат')
         stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
         stats_df.to_excel(writer, sheet_name='Сводка')
-        # Лист со спецификацией
         ws_spec = writer.book.add_worksheet('Спецификация датчика')
         specs_text = get_sensor_specs(sensor_type)
         row = 0
@@ -218,7 +229,11 @@ def generate_excel_report(df, stats, sensor_name, sensor_type):
             row += 1
     return output.getvalue()
 
-def generate_pdf_report(df, stats, sensor_name, f0, t0, sensor_type):
+def generate_pdf_report(df, stats, sensor_name):
+    sensor_type = st.session_state.sensor_type
+    f0 = st.session_state.f0
+    t0 = st.session_state.t0
+
     fig_mpl, ax = plt.subplots(figsize=(8, 4))
     ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
     ax.set_xlabel("Нагрузка, тс")
@@ -256,7 +271,7 @@ def generate_pdf_report(df, stats, sensor_name, f0, t0, sensor_type):
     c.drawString(50, height - 80, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     c.drawString(50, height - 100, f"Нулевые значения: f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
 
-    # Спецификация датчика
+    # Спецификация
     specs_text = get_sensor_specs(sensor_type)
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 130, "Технические характеристики датчика:")
@@ -289,7 +304,11 @@ def generate_pdf_report(df, stats, sensor_name, f0, t0, sensor_type):
     buffer.seek(0)
     return buffer
 
-def generate_word_report(df, stats, sensor_name, f0, t0, sensor_type):
+def generate_word_report(df, stats, sensor_name):
+    sensor_type = st.session_state.sensor_type
+    f0 = st.session_state.f0
+    t0 = st.session_state.t0
+
     doc = Document()
     title = doc.add_heading(f"Отчёт по датчику: {sensor_name}", level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -345,7 +364,7 @@ def generate_word_report(df, stats, sensor_name, f0, t0, sensor_type):
     buffer.seek(0)
     return buffer
 
-def display_results(result, stats, sensor_name, f0, t0, sensor_type, key_suffix=""):
+def display_results(result, stats, sensor_name):
     st.subheader("✅ Результат обработки")
     st.dataframe(result)
 
@@ -375,35 +394,35 @@ def display_results(result, stats, sensor_name, f0, t0, sensor_type, key_suffix=
     st.subheader("📥 Скачать отчёт")
     col1, col2, col3 = st.columns(3)
     with col1:
-        excel_data = generate_excel_report(result, stats, sensor_name, sensor_type)
+        excel_data = generate_excel_report(result, stats, sensor_name)
         st.download_button(
             label="📊 Excel",
             data=excel_data,
             file_name=f"result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"download_excel_{key_suffix}"
+            key=f"download_excel_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
     with col2:
-        pdf_data = generate_pdf_report(result, stats, sensor_name, f0, t0, sensor_type)
+        pdf_data = generate_pdf_report(result, stats, sensor_name)
         st.download_button(
             label="📄 PDF",
             data=pdf_data.getvalue(),
             file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
             mime="application/pdf",
-            key=f"download_pdf_{key_suffix}"
+            key=f"download_pdf_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
     with col3:
-        word_data = generate_word_report(result, stats, sensor_name, f0, t0, sensor_type)
+        word_data = generate_word_report(result, stats, sensor_name)
         st.download_button(
             label="📝 Word",
             data=word_data.getvalue(),
             file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key=f"download_word_{key_suffix}"
+            key=f"download_word_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
 
 # ------------------------------------------------------------
-# МОДУЛЬ: Парсинг свайных испытаний (универсальный)
+# ПАРСИНГ СВАЙНЫХ ИСПЫТАНИЙ (без изменений)
 # ------------------------------------------------------------
 PILE_A = 6.51e-08
 PILE_B = -0.02931
@@ -412,16 +431,11 @@ PILE_K = -0.036375
 PILE_T_REF = 23.9
 
 def parse_pile_data(file_bytes):
-    """
-    Универсальный парсинг файлов испытаний свай.
-    Возвращает словарь результатов и список отладочных сообщений.
-    """
     debug = []
     xl = pd.ExcelFile(file_bytes)
     sheet_names = xl.sheet_names
     debug.append(f"📋 Найдены листы: {sheet_names}")
 
-    # ---------- 1. Поиск нулевого листа ----------
     zero_sheet = None
     for name in sheet_names:
         if 'свая' in name.lower() and not 'испытания' in name.lower():
@@ -438,7 +452,6 @@ def parse_pile_data(file_bytes):
                 break
     debug.append(f"🔍 Нулевой лист: {zero_sheet}")
 
-    # ---------- 2. Поиск листа испытаний ----------
     test_sheet = None
     for name in sheet_names:
         if 'испытания' in name.lower() or 'испыт' in name.lower():
@@ -458,11 +471,9 @@ def parse_pile_data(file_bytes):
     if zero_sheet is None or test_sheet is None:
         raise ValueError(f"Не найдены оба листа. zero={zero_sheet}, test={test_sheet}")
 
-    # ---------- 3. Парсинг нулевых значений ----------
     df_zero = pd.read_excel(file_bytes, sheet_name=zero_sheet, header=None)
     zero_data = {}
 
-    # Ищем строку с заголовками
     start_row = None
     freq_col, temp_col = None, None
     for idx, row in df_zero.iterrows():
@@ -517,7 +528,6 @@ def parse_pile_data(file_bytes):
     if zero_data:
         debug.append(f"Примеры: {list(zero_data.keys())[:3]}")
 
-    # ---------- 4. Парсинг испытаний ----------
     df_test = pd.read_excel(file_bytes, sheet_name=test_sheet, header=None)
 
     header_row = None
@@ -572,7 +582,6 @@ def parse_pile_data(file_bytes):
 
     debug.append(f"🧩 Найдено ступеней: {len(step_columns)}")
 
-    # ---------- 5. Поиск строк датчиков ----------
     sensor_rows = []
     for idx in range(header_row + 1, len(df_test)):
         row = df_test.iloc[idx]
@@ -587,7 +596,6 @@ def parse_pile_data(file_bytes):
     if sensor_rows:
         debug.append(f"Примеры: {[str(df_test.iloc[i,0]).strip() for i in sensor_rows[:3]]}")
 
-    # ---------- 6. Сбор данных ----------
     results = {}
     for idx in sensor_rows:
         sensor_name = str(df_test.iloc[idx, 0]).strip()
@@ -649,7 +657,6 @@ with st.sidebar:
         index=0,
         key="sensor_type"
     )
-    # Отображение краткой информации о датчике
     st.markdown("---")
     st.markdown("**📋 Спецификация датчика**")
     specs = SENSOR_SPECS.get(sensor_type)
@@ -741,13 +748,21 @@ with tab1:
             df_mapped = df_raw[[col_load, col_freq, col_temp]].copy()
             df_mapped.columns = ['load', 'freq', 'temp']
 
+            # Сохраняем параметры в сессию перед обработкой
+            st.session_state.sensor_type = sensor_type
+            st.session_state.f0 = f0
+            st.session_state.t0 = t0
+            st.session_state.g_val = g_val
+            st.session_state.c_val = c_val
+
             with st.spinner("Обработка данных..."):
                 result, stats = process_data(df_mapped, f0, t0, sensor_type, g_val, c_val)
 
             if result is not None:
                 st.session_state.result = result
+                st.session_state.stats = stats
                 st.session_state.sensor_name = uploaded_file.name
-                display_results(result, stats, uploaded_file.name, f0, t0, sensor_type, key_suffix="file")
+                display_results(result, stats, uploaded_file.name)
 
         except Exception as e:
             st.error(f"Ошибка при обработке: {e}")
@@ -800,13 +815,22 @@ with tab2:
                     st.error("Не удалось распознать данные. Проверьте формат и разделитель.")
                 else:
                     df_manual = pd.DataFrame(rows, columns=['load', 'freq', 'temp'])
+
+                    # Сохраняем параметры в сессию
+                    st.session_state.sensor_type = sensor_type
+                    st.session_state.f0 = f0
+                    st.session_state.t0 = t0
+                    st.session_state.g_val = g_val
+                    st.session_state.c_val = c_val
+
                     with st.spinner("Обработка данных..."):
                         result, stats = process_data(df_manual, f0, t0, sensor_type, g_val, c_val)
 
                     if result is not None:
                         st.session_state.result = result
+                        st.session_state.stats = stats
                         st.session_state.sensor_name = "Ручной ввод"
-                        display_results(result, stats, "Ручной ввод", f0, t0, sensor_type, key_suffix="manual")
+                        display_results(result, stats, "Ручной ввод")
 
             except Exception as e:
                 st.error(f"Ошибка при обработке: {e}")
