@@ -146,7 +146,7 @@ def get_sensor_specs(sensor_type):
     return "\n".join(lines)
 
 # ------------------------------------------------------------
-# Инициализация сессии
+# Инициализация сессии (без конфликтов с виджетами)
 # ------------------------------------------------------------
 if 'result' not in st.session_state:
     st.session_state.result = None
@@ -156,16 +156,18 @@ if 'sensor_name' not in st.session_state:
     st.session_state.sensor_name = ""
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
-if 'f0' not in st.session_state:
-    st.session_state.f0 = 1000.0
-if 't0' not in st.session_state:
-    st.session_state.t0 = 20.0
-if 'sensor_type' not in st.session_state:
-    st.session_state.sensor_type = "MAS‑VWS‑EM15H (встроенный)"
-if 'g_val' not in st.session_state:
-    st.session_state.g_val = None
-if 'c_val' not in st.session_state:
-    st.session_state.c_val = None
+
+# Переменные для отчётов (сохраняются при обработке)
+if 'report_sensor_type' not in st.session_state:
+    st.session_state.report_sensor_type = "MAS‑VWS‑EM15H (встроенный)"
+if 'report_f0' not in st.session_state:
+    st.session_state.report_f0 = 1000.0
+if 'report_t0' not in st.session_state:
+    st.session_state.report_t0 = 20.0
+if 'report_g_val' not in st.session_state:
+    st.session_state.report_g_val = None
+if 'report_c_val' not in st.session_state:
+    st.session_state.report_c_val = None
 
 # ------------------------------------------------------------
 # Обработка тензодатчиков
@@ -212,10 +214,10 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df, stats
 
 # ------------------------------------------------------------
-# Генерация отчётов (используют параметры из сессии)
+# Генерация отчётов (используют report_* параметры из сессии)
 # ------------------------------------------------------------
 def generate_excel_report(df, stats, sensor_name):
-    sensor_type = st.session_state.sensor_type
+    sensor_type = st.session_state.report_sensor_type
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Результат')
@@ -230,9 +232,9 @@ def generate_excel_report(df, stats, sensor_name):
     return output.getvalue()
 
 def generate_pdf_report(df, stats, sensor_name):
-    sensor_type = st.session_state.sensor_type
-    f0 = st.session_state.f0
-    t0 = st.session_state.t0
+    sensor_type = st.session_state.report_sensor_type
+    f0 = st.session_state.report_f0
+    t0 = st.session_state.report_t0
 
     fig_mpl, ax = plt.subplots(figsize=(8, 4))
     ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
@@ -305,9 +307,9 @@ def generate_pdf_report(df, stats, sensor_name):
     return buffer
 
 def generate_word_report(df, stats, sensor_name):
-    sensor_type = st.session_state.sensor_type
-    f0 = st.session_state.f0
-    t0 = st.session_state.t0
+    sensor_type = st.session_state.report_sensor_type
+    f0 = st.session_state.report_f0
+    t0 = st.session_state.report_t0
 
     doc = Document()
     title = doc.add_heading(f"Отчёт по датчику: {sensor_name}", level=1)
@@ -646,6 +648,7 @@ st.title("📊 Обработка данных тензодатчиков")
 # Боковая панель
 with st.sidebar:
     st.header("Настройки датчика")
+    # Виджеты используют session_state как key, но мы не пишем в них программно
     sensor_type = st.selectbox(
         "Тип датчика",
         [
@@ -677,7 +680,6 @@ with st.sidebar:
         c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
         st.caption("Из сертификата датчика.")
 
-    st.header("Нулевые значения")
     f0 = st.number_input("f₀ (Гц)", value=1000.0, step=0.1, format="%.1f", key="f0")
     t0 = st.number_input("T₀ (°C)", value=20.0, step=0.1, format="%.1f", key="t0")
 
@@ -748,12 +750,12 @@ with tab1:
             df_mapped = df_raw[[col_load, col_freq, col_temp]].copy()
             df_mapped.columns = ['load', 'freq', 'temp']
 
-            # Сохраняем параметры в сессию перед обработкой
-            st.session_state.sensor_type = sensor_type
-            st.session_state.f0 = f0
-            st.session_state.t0 = t0
-            st.session_state.g_val = g_val
-            st.session_state.c_val = c_val
+            # Сохраняем текущие настройки в report_* переменные (для отчётов)
+            st.session_state.report_sensor_type = sensor_type
+            st.session_state.report_f0 = f0
+            st.session_state.report_t0 = t0
+            st.session_state.report_g_val = g_val
+            st.session_state.report_c_val = c_val
 
             with st.spinner("Обработка данных..."):
                 result, stats = process_data(df_mapped, f0, t0, sensor_type, g_val, c_val)
@@ -816,12 +818,12 @@ with tab2:
                 else:
                     df_manual = pd.DataFrame(rows, columns=['load', 'freq', 'temp'])
 
-                    # Сохраняем параметры в сессию
-                    st.session_state.sensor_type = sensor_type
-                    st.session_state.f0 = f0
-                    st.session_state.t0 = t0
-                    st.session_state.g_val = g_val
-                    st.session_state.c_val = c_val
+                    # Сохраняем текущие настройки в report_* переменные
+                    st.session_state.report_sensor_type = sensor_type
+                    st.session_state.report_f0 = f0
+                    st.session_state.report_t0 = t0
+                    st.session_state.report_g_val = g_val
+                    st.session_state.report_c_val = c_val
 
                     with st.spinner("Обработка данных..."):
                         result, stats = process_data(df_manual, f0, t0, sensor_type, g_val, c_val)
