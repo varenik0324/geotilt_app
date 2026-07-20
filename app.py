@@ -55,7 +55,7 @@ def save_config(config):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 # ------------------------------------------------------------
-# ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ ДАТЧИКОВ
+# ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ ДАТЧИКОВ (все ключи присутствуют)
 # ------------------------------------------------------------
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -116,6 +116,8 @@ SENSOR_SPECS = {
         "temperature_accuracy": "±0.5 °C (@ -10…70 °C)",
         "waterproof": "≥1.0 МПа (1.2 × номинальное давление)",
         "k_factor": "G × C (задаётся пользователем)",
+        "thermal_expansion_steel": "12.2 μϵ/°C (для стали)",
+        "thermal_expansion_concrete": "10.0 μϵ/°C (для бетона)",
         "description": "Виброструнный датчик давления грунта для измерения напряжений в массиве грунта, насыпях, основаниях фундаментов. Корпус из нержавеющей стали.",
         "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей."
     }
@@ -126,20 +128,21 @@ def get_sensor_specs(sensor_type):
     specs = SENSOR_SPECS.get(sensor_type)
     if not specs:
         return "Характеристики для данного типа датчика не найдены."
+    # Используем .get() для всех ключей, чтобы избежать ошибок
     lines = [
-        f"Тип датчика: {specs['name']}",
-        f"Назначение: {specs['type']}",
-        f"Диапазон измерений: {specs['measuring_range']}",
-        f"Точность: {specs['accuracy']}",
-        f"Разрешение: {specs['resolution']}",
-        f"Диапазон температур: {specs['temperature_range']}",
-        f"Точность температуры: {specs['temperature_accuracy']}",
-        f"Водонепроницаемость: {specs['waterproof']}",
-        f"Коэффициент K: {specs['k_factor']}",
-        f"Коэф. теплового расширения (сталь): {specs['thermal_expansion_steel']}",
-        f"Коэф. теплового расширения (бетон): {specs['thermal_expansion_concrete']}",
-        f"Описание: {specs['description']}",
-        f"Области применения: {specs['application']}"
+        f"Тип датчика: {specs.get('name', 'не указан')}",
+        f"Назначение: {specs.get('type', 'не указано')}",
+        f"Диапазон измерений: {specs.get('measuring_range', 'не указан')}",
+        f"Точность: {specs.get('accuracy', 'не указана')}",
+        f"Разрешение: {specs.get('resolution', 'не указано')}",
+        f"Диапазон температур: {specs.get('temperature_range', 'не указан')}",
+        f"Точность температуры: {specs.get('temperature_accuracy', 'не указана')}",
+        f"Водонепроницаемость: {specs.get('waterproof', 'не указана')}",
+        f"Коэффициент K: {specs.get('k_factor', 'не указан')}",
+        f"Коэф. теплового расширения (сталь): {specs.get('thermal_expansion_steel', 'не указан')}",
+        f"Коэф. теплового расширения (бетон): {specs.get('thermal_expansion_concrete', 'не указан')}",
+        f"Описание: {specs.get('description', 'не указано')}",
+        f"Области применения: {specs.get('application', 'не указаны')}"
     ]
     return "\n".join(lines)
 
@@ -207,7 +210,7 @@ def generate_excel_report(df, stats, sensor_name, sensor_type):
         stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
         stats_df.to_excel(writer, sheet_name='Сводка')
         # Лист со спецификацией
-        ws_spec = writer.sheets['Спецификация датчика'] = writer.book.add_worksheet('Спецификация датчика')
+        ws_spec = writer.book.add_worksheet('Спецификация датчика')
         specs_text = get_sensor_specs(sensor_type)
         row = 0
         for line in specs_text.split('\n'):
@@ -651,10 +654,10 @@ with st.sidebar:
     st.markdown("**📋 Спецификация датчика**")
     specs = SENSOR_SPECS.get(sensor_type)
     if specs:
-        st.markdown(f"**Тип:** {specs['type']}")
-        st.markdown(f"**Диапазон:** {specs['measuring_range']}")
-        st.markdown(f"**Точность:** {specs['accuracy']}")
-        st.markdown(f"**Коэф. K:** {specs['k_factor']}")
+        st.markdown(f"**Тип:** {specs.get('type', 'не указан')}")
+        st.markdown(f"**Диапазон:** {specs.get('measuring_range', 'не указан')}")
+        st.markdown(f"**Точность:** {specs.get('accuracy', 'не указана')}")
+        st.markdown(f"**Коэф. K:** {specs.get('k_factor', 'не указан')}")
         st.caption("Подробные характеристики будут включены в отчёт.")
     else:
         st.warning("Характеристики не найдены")
