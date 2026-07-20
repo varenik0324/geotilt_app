@@ -19,7 +19,7 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # ------------------------------------------------------------
-# Путь к ресурсам
+# Путь к ресурсам (для .exe и для разработки)
 # ------------------------------------------------------------
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
@@ -65,7 +65,7 @@ if 'config' not in st.session_state:
     st.session_state.config = load_config()
 
 # ------------------------------------------------------------
-# Обработка тензодатчиков (без изменений)
+# Обработка тензодатчиков
 # ------------------------------------------------------------
 def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     if df.empty:
@@ -109,7 +109,7 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df, stats
 
 # ------------------------------------------------------------
-# Генерация отчётов (тензодатчики) – без изменений
+# Генерация отчётов (тензодатчики)
 # ------------------------------------------------------------
 def generate_excel_report(df, stats, sensor_name):
     output = io.BytesIO()
@@ -458,12 +458,8 @@ def parse_pile_data(file_bytes):
 
     # Если не нашли ступени, создадим их по порядку следования колонок
     if not step_columns:
-        # Ищем группы колонок по 5 (Время, Нагрузка, Давление, Частота, Температура)
-        # Но это сложно, проще считать, что каждая следующая группа после заголовка - это ступень
-        # Просто создадим один шаг
         debug.append("⚠️ Ступени не обнаружены, создаём одну группу")
         step_columns[1] = {}
-        # Найдём индексы для первой группы
         for i, h in enumerate(headers):
             if 'Время' in h:
                 step_columns[1]['Время'] = i
@@ -471,7 +467,7 @@ def parse_pile_data(file_bytes):
                 step_columns[1]['Нагрузка'] = i
             elif 'Давление' in h:
                 step_columns[1]['Давление'] = i
-            elif 'Частота' в h:
+            elif 'Частота' in h:
                 step_columns[1]['Частота'] = i
             elif 'Температура' in h:
                 step_columns[1]['Температура'] = i
@@ -604,8 +600,114 @@ with st.sidebar:
 # ------------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📂 Загрузка файла", "✏️ Ручной ввод", "🧪 Свайные испытания"])
 
-# Вкладка 1 и 2 без изменений (опущены для краткости, но они есть в коде)
-# ... (вставьте сюда код для tab1 и tab2 из предыдущей версии или оставьте как есть)
+# ---------- Вкладка 1: Загрузка файла ----------
+with tab1:
+    st.subheader("Загрузите файл Excel с данными")
+    uploaded_file = st.file_uploader("Выберите файл .xlsx или .xls", type=["xlsx", "xls"], key="file_uploader")
+
+    if uploaded_file is not None:
+        try:
+            df_raw = pd.read_excel(uploaded_file)
+            st.success("Файл успешно загружен!")
+            df_raw.columns = [str(col) for col in df_raw.columns]
+            st.write("Исходные столбцы:", df_raw.columns.tolist())
+            st.dataframe(df_raw.head())
+
+            col_map = {}
+            for col in df_raw.columns:
+                col_lower = col.lower()
+                if re.search(r'нагрузк|load', col_lower):
+                    col_map[col] = 'load'
+                elif re.search(r'частот|freq|hz', col_lower):
+                    col_map[col] = 'freq'
+                elif re.search(r'температур|temp', col_lower):
+                    col_map[col] = 'temp'
+
+            default_load = next((c for c in col_map if col_map[c] == 'load'), None)
+            default_freq = next((c for c in col_map if col_map[c] == 'freq'), None)
+            default_temp = next((c for c in col_map if col_map[c] == 'temp'), None)
+
+            st.subheader("🔧 Сопоставление столбцов")
+            col_load = st.selectbox("Выберите столбец с нагрузкой (load)", options=[None] + df_raw.columns.tolist(), index=0 if default_load is None else df_raw.columns.tolist().index(default_load)+1, key="col_load")
+            col_freq = st.selectbox("Выберите столбец с частотой (freq)", options=[None] + df_raw.columns.tolist(), index=0 if default_freq is None else df_raw.columns.tolist().index(default_freq)+1, key="col_freq")
+            col_temp = st.selectbox("Выберите столбец с температурой (temp)", options=[None] + df_raw.columns.tolist(), index=0 if default_temp is None else df_raw.columns.tolist().index(default_temp)+1, key="col_temp")
+
+            if col_load is None or col_freq is None or col_temp is None:
+                st.warning("Пожалуйста, выберите все три столбца.")
+                st.stop()
+
+            df_mapped = df_raw[[col_load, col_freq, col_temp]].copy()
+            df_mapped.columns = ['load', 'freq', 'temp']
+
+            with st.spinner("Обработка данных..."):
+                result, stats = process_data(df_mapped, f0, t0, sensor_type, g_val, c_val)
+
+            if result is not None:
+                st.session_state.result = result
+                st.session_state.sensor_name = uploaded_file.name
+                display_results(result, stats, uploaded_file.name, f0, t0, key_suffix="file")
+
+        except Exception as e:
+            st.error(f"Ошибка при обработке: {e}")
+
+# ---------- Вкладка 2: Ручной ввод ----------
+with tab2:
+    st.subheader("Вставьте данные из буфера обмена")
+    st.markdown(
+        "Вставьте данные в текстовое поле. Ожидается **три колонки** в порядке:\n"
+        "1. Нагрузка (тс)\n"
+        "2. Частота (Гц)\n"
+        "3. Температура (°C)\n\n"
+        "Разделитель можно выбрать ниже. Пример (табуляция):\n"
+        "0.0  1000.0  20.0\n"
+        "5.0  1012.5  21.2\n"
+        "10.0 1025.0  22.0"
+    )
+
+    delimiter = st.selectbox(
+        "Разделитель",
+        options=["\\t (табуляция)", ", (запятая)", "; (точка с запятой)", "пробел"],
+        index=0,
+        key="delimiter"
+    )
+    if delimiter == "\\t (табуляция)":
+        sep = '\t'
+    elif delimiter == ", (запятая)":
+        sep = ','
+    elif delimiter == "; (точка с запятой)":
+        sep = ';'
+    else:
+        sep = ' '
+
+    text_data = st.text_area("Введите или вставьте данные", height=200, key="manual_input")
+
+    if st.button("Обработать введённые данные", key="process_manual"):
+        if not text_data.strip():
+            st.warning("Пожалуйста, введите данные.")
+        else:
+            try:
+                lines = text_data.strip().splitlines()
+                rows = []
+                for line in lines:
+                    if line.strip():
+                        parts = line.split(sep)
+                        parts = [p for p in parts if p.strip()]
+                        if len(parts) >= 3:
+                            rows.append(parts[:3])
+                if not rows:
+                    st.error("Не удалось распознать данные. Проверьте формат и разделитель.")
+                else:
+                    df_manual = pd.DataFrame(rows, columns=['load', 'freq', 'temp'])
+                    with st.spinner("Обработка данных..."):
+                        result, stats = process_data(df_manual, f0, t0, sensor_type, g_val, c_val)
+
+                    if result is not None:
+                        st.session_state.result = result
+                        st.session_state.sensor_name = "Ручной ввод"
+                        display_results(result, stats, "Ручной ввод", f0, t0, key_suffix="manual")
+
+            except Exception as e:
+                st.error(f"Ошибка при обработке: {e}")
 
 # ---------- Вкладка 3: Свайные испытания ----------
 with tab3:
