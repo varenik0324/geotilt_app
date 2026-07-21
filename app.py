@@ -19,16 +19,41 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import logging
 import sqlite3
+import requests  # для Telegram
+
+# ========== НАСТРОЙКИ TELEGRAM ==========
+BOT_TOKEN = "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"  # ЗАМЕНИ НА РЕАЛЬНЫЙ ТОКЕН
+CHAT_ID = "1278271780"  # твой chat_id
 
 # ========== ЛОГГИРОВАНИЕ ==========
 logging.basicConfig(filename='app_errors.log', level=logging.ERROR,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
+# ========== ФУНКЦИЯ ОТПРАВКИ В TELEGRAM ==========
+def send_telegram(message):
+    """Отправляет сообщение в Telegram."""
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": f"📩 Сообщение из приложения:\n\n{message}",
+            "parse_mode": "HTML"
+        }
+        r = requests.post(url, json=payload, timeout=5)
+        if r.status_code == 200:
+            return True
+        else:
+            logging.error(f"Telegram send error: {r.text}")
+            return False
+    except Exception as e:
+        logging.error(f"Telegram exception: {e}")
+        return False
+
 # ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
 def check_for_updates():
     try:
         import requests
-        url = "https://your-server.com/version.txt"  # ЗАМЕНИТЕ НА РЕАЛЬНЫЙ URL
+        url = "https://your-server.com/version.txt"  # ЗАМЕНИ НА РЕАЛЬНЫЙ URL
         r = requests.get(url, timeout=3)
         if r.status_code == 200:
             latest_version = r.text.strip()
@@ -36,7 +61,7 @@ def check_for_updates():
             if latest_version != current_version:
                 st.warning(f"Доступна новая версия {latest_version}! Пожалуйста, обновитесь.")
     except:
-        pass  # если нет интернета или файл недоступен, просто игнорируем
+        pass
 
 # ------------------------------------------------------------
 # Путь к ресурсам
@@ -778,15 +803,23 @@ with st.sidebar:
 **Форматы файлов:** .xlsx, .xls
         """)
 
-    # ---------- ОБРАТНАЯ СВЯЗЬ ----------
+    # ---------- ОБРАТНАЯ СВЯЗЬ (Telegram) ----------
     st.markdown("---")
     st.subheader("📧 Обратная связь")
     with st.expander("Сообщить об ошибке"):
-        error_text = st.text_area("Опишите проблему")
-        if st.button("Отправить"):
+        error_text = st.text_area("Опишите проблему", key="feedback_text")
+        if st.button("Отправить", key="send_feedback"):
             if error_text:
-                logging.error(f"Сообщение пользователя: {error_text}")
-                st.success("Спасибо! Мы получили ваше сообщение.")
+                try:
+                    if send_telegram(error_text):
+                        st.success("✅ Спасибо! Сообщение отправлено.")
+                    else:
+                        st.error("❌ Не удалось отправить. Попробуйте позже.")
+                except Exception as e:
+                    st.error("❌ Ошибка отправки.")
+                    logging.error(f"Ошибка отправки в Telegram: {e}")
+            else:
+                st.warning("Пожалуйста, напишите текст сообщения.")
 
 # ------------------------------------------------------------
 # Вкладки
@@ -850,6 +883,8 @@ with tab1:
         except Exception as e:
             st.error(f"Ошибка при обработке: {e}")
             logging.error(f"Ошибка: {e}, файл: {uploaded_file.name if uploaded_file else 'ручной ввод'}")
+            # Отправляем ошибку в Telegram
+            send_telegram(f"Ошибка в загрузке файла: {e}")
 
 # ---------- Вкладка 2: Ручной ввод ----------
 with tab2:
@@ -918,6 +953,7 @@ with tab2:
             except Exception as e:
                 st.error(f"Ошибка при обработке: {e}")
                 logging.error(f"Ошибка ручного ввода: {e}")
+                send_telegram(f"Ошибка ручного ввода: {e}")
 
 # ---------- Вкладка 3: Свайные испытания ----------
 with tab3:
@@ -981,3 +1017,4 @@ with tab3:
         except Exception as e:
             st.error(f"Ошибка обработки: {e}")
             logging.error(f"Ошибка обработки свайных данных: {e}")
+            send_telegram(f"Ошибка обработки свайных данных: {e}")
