@@ -19,11 +19,11 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import logging
 import sqlite3
-import requests  # для Telegram
+import requests
 
 # ========== НАСТРОЙКИ TELEGRAM ==========
 BOT_TOKEN = "8538186715:AAG7XsBxp6TAy2lalWQ6_KkBkrUIEZCqxuw"  # ЗАМЕНИ НА РЕАЛЬНЫЙ ТОКЕН
-CHAT_ID = "1278271780"  # твой chat_id
+CHAT_ID = "1278271780"
 
 # ========== ЛОГГИРОВАНИЕ ==========
 logging.basicConfig(filename='app_errors.log', level=logging.ERROR,
@@ -31,35 +31,25 @@ logging.basicConfig(filename='app_errors.log', level=logging.ERROR,
 
 # ========== ФУНКЦИЯ ОТПРАВКИ В TELEGRAM ==========
 def send_telegram(message):
-    """Отправляет сообщение в Telegram."""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": CHAT_ID,
-            "text": f"📩 Сообщение из приложения:\n\n{message}",
-            "parse_mode": "HTML"
-        }
+        payload = {"chat_id": CHAT_ID, "text": f"📩 {message}", "parse_mode": "HTML"}
         r = requests.post(url, json=payload, timeout=5)
-        if r.status_code == 200:
-            return True
-        else:
-            logging.error(f"Telegram send error: {r.text}")
-            return False
+        return r.status_code == 200
     except Exception as e:
         logging.error(f"Telegram exception: {e}")
         return False
 
-# ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
 def check_for_updates():
     try:
         import requests
-        url = "https://your-server.com/version.txt"  # ЗАМЕНИ НА РЕАЛЬНЫЙ URL
+        url = "https://your-server.com/version.txt"  # ЗАМЕНИ
         r = requests.get(url, timeout=3)
         if r.status_code == 200:
-            latest_version = r.text.strip()
-            current_version = "1.0"
-            if latest_version != current_version:
-                st.warning(f"Доступна новая версия {latest_version}! Пожалуйста, обновитесь.")
+            latest = r.text.strip()
+            current = "1.0"
+            if latest != current:
+                st.warning(f"Доступна новая версия {latest}!")
     except:
         pass
 
@@ -100,7 +90,7 @@ def save_config(config):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 # ------------------------------------------------------------
-# ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ ДАТЧИКОВ
+# СПЕЦИФИКАЦИИ ДАТЧИКОВ
 # ------------------------------------------------------------
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -169,10 +159,9 @@ SENSOR_SPECS = {
 }
 
 def get_sensor_specs(sensor_type):
-    """Возвращает форматированный текст с характеристиками датчика."""
     specs = SENSOR_SPECS.get(sensor_type)
     if not specs:
-        return "Характеристики для данного типа датчика не найдены."
+        return "Характеристики не найдены."
     lines = [
         f"Тип датчика: {specs.get('name', 'не указан')}",
         f"Назначение: {specs.get('type', 'не указано')}",
@@ -191,7 +180,7 @@ def get_sensor_specs(sensor_type):
     return "\n".join(lines)
 
 # ------------------------------------------------------------
-# Инициализация сессии (без конфликтов с виджетами)
+# Инициализация сессии
 # ------------------------------------------------------------
 if 'result' not in st.session_state:
     st.session_state.result = None
@@ -201,8 +190,6 @@ if 'sensor_name' not in st.session_state:
     st.session_state.sensor_name = ""
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
-
-# Переменные для отчётов (сохраняются при обработке)
 if 'report_sensor_type' not in st.session_state:
     st.session_state.report_sensor_type = "MAS‑VWS‑EM15H (встроенный)"
 if 'report_f0' not in st.session_state:
@@ -259,7 +246,7 @@ def process_data(df, f0, t0, sensor_type, g_val=None, c_val=None):
     return df, stats
 
 # ------------------------------------------------------------
-# Генерация отчётов (используют report_* параметры из сессии)
+# Генерация отчётов
 # ------------------------------------------------------------
 def generate_excel_report(df, stats, sensor_name):
     sensor_type = st.session_state.report_sensor_type
@@ -318,7 +305,6 @@ def generate_pdf_report(df, stats, sensor_name):
     c.drawString(50, height - 80, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     c.drawString(50, height - 100, f"Нулевые значения: f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
 
-    # Спецификация
     specs_text = get_sensor_specs(sensor_type)
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 130, "Технические характеристики датчика:")
@@ -411,7 +397,9 @@ def generate_word_report(df, stats, sensor_name):
     buffer.seek(0)
     return buffer
 
-# ========== СОХРАНЕНИЕ В БАЗУ ДАННЫХ ==========
+# ------------------------------------------------------------
+# Сохранение в БД
+# ------------------------------------------------------------
 def save_to_db(df, sensor_name):
     try:
         conn = sqlite3.connect('measurements.db')
@@ -495,7 +483,6 @@ def display_results(result, stats, sensor_name):
             key=f"download_word_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
 
-    # ---------- КНОПКА СОХРАНЕНИЯ В БАЗУ ----------
     st.subheader("💾 Сохранить в базу данных")
     if st.button("Сохранить текущий результат в базу"):
         if save_to_db(result, sensor_name):
@@ -504,7 +491,7 @@ def display_results(result, stats, sensor_name):
             st.error("Ошибка сохранения в базу. Проверьте логи.")
 
 # ------------------------------------------------------------
-# ПАРСИНГ СВАЙНЫХ ИСПЫТАНИЙ (без изменений)
+# ПАРСИНГ СВАЙНЫХ ИСПЫТАНИЙ
 # ------------------------------------------------------------
 PILE_A = 6.51e-08
 PILE_B = -0.02931
@@ -725,7 +712,6 @@ def parse_pile_data(file_bytes):
 st.set_page_config(page_title="Анализ датчиков", layout="wide")
 st.title("📊 Обработка данных тензодатчиков")
 
-# Проверка обновлений
 check_for_updates()
 
 # Боковая панель
@@ -788,7 +774,6 @@ with st.sidebar:
     st.markdown("### 🏗️ Геофундамент")
     st.caption("© 2026, все права защищены")
 
-    # ---------- ДОКУМЕНТАЦИЯ ----------
     st.markdown("---")
     with st.expander("📖 Помощь"):
         st.markdown("""
@@ -797,18 +782,18 @@ with st.sidebar:
 1. **Загрузка файла** – выберите Excel-файл с колонками: нагрузка, частота, температура.
 2. **Ручной ввод** – вставьте данные из буфера обмена.
 3. **Свайные испытания** – загрузите файл с листами "Свая..." и "Испытания".
-4. **Настройки** – выберите тип датчика, укажите f₀ и T₀.
-5. **Результаты** – вы можете скачать отчёт в Excel, PDF или Word.
+4. **Подбор датчиков** – выберите параметры и получите рекомендации.
+5. **Настройки** – выберите тип датчика, укажите f₀ и T₀.
+6. **Результаты** – скачайте отчёт в Excel, PDF или Word.
 
 **Форматы файлов:** .xlsx, .xls
         """)
 
-    # ---------- ОБРАТНАЯ СВЯЗЬ (Telegram) ----------
-        st.markdown("---")
+    st.markdown("---")
     st.subheader("📧 Обратная связь")
     with st.expander("Сообщить об ошибке"):
         user_name = st.text_input("Ваше имя (или ник в Telegram)", key="user_name")
-        user_email = st.text_input("Ваш email (чтобы я мог ответить)", key="user_email")
+        user_email = st.text_input("Ваш email", key="user_email")
         error_text = st.text_area("Опишите проблему", key="feedback_text")
         if st.button("Отправить", key="send_feedback"):
             if error_text:
@@ -817,17 +802,17 @@ with st.sidebar:
                     if send_telegram(message):
                         st.success("✅ Спасибо! Сообщение отправлено.")
                     else:
-                        st.error("❌ Не удалось отправить. Попробуйте позже.")
+                        st.error("❌ Не удалось отправить.")
                 except Exception as e:
                     st.error("❌ Ошибка отправки.")
                     logging.error(f"Ошибка отправки в Telegram: {e}")
             else:
-                st.warning("Пожалуйста, напишите текст сообщения.")
+                st.warning("Напишите текст сообщения.")
 
 # ------------------------------------------------------------
 # Вкладки
 # ------------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📂 Загрузка файла", "✏️ Ручной ввод", "🧪 Свайные испытания"])
+tab1, tab2, tab3, tab4 = st.tabs(["📂 Загрузка файла", "✏️ Ручной ввод", "🧪 Свайные испытания", "📋 Подбор датчиков"])
 
 # ---------- Вкладка 1: Загрузка файла ----------
 with tab1:
@@ -857,9 +842,15 @@ with tab1:
             default_temp = next((c for c in col_map if col_map[c] == 'temp'), None)
 
             st.subheader("🔧 Сопоставление столбцов")
-            col_load = st.selectbox("Выберите столбец с нагрузкой (load)", options=[None] + df_raw.columns.tolist(), index=0 if default_load is None else df_raw.columns.tolist().index(default_load)+1, key="col_load")
-            col_freq = st.selectbox("Выберите столбец с частотой (freq)", options=[None] + df_raw.columns.tolist(), index=0 if default_freq is None else df_raw.columns.tolist().index(default_freq)+1, key="col_freq")
-            col_temp = st.selectbox("Выберите столбец с температурой (temp)", options=[None] + df_raw.columns.tolist(), index=0 if default_temp is None else df_raw.columns.tolist().index(default_temp)+1, key="col_temp")
+            col_load = st.selectbox("Столбец с нагрузкой (load)", options=[None] + df_raw.columns.tolist(),
+                                    index=0 if default_load is None else df_raw.columns.tolist().index(default_load)+1,
+                                    key="col_load")
+            col_freq = st.selectbox("Столбец с частотой (freq)", options=[None] + df_raw.columns.tolist(),
+                                    index=0 if default_freq is None else df_raw.columns.tolist().index(default_freq)+1,
+                                    key="col_freq")
+            col_temp = st.selectbox("Столбец с температурой (temp)", options=[None] + df_raw.columns.tolist(),
+                                    index=0 if default_temp is None else df_raw.columns.tolist().index(default_temp)+1,
+                                    key="col_temp")
 
             if col_load is None or col_freq is None or col_temp is None:
                 st.warning("Пожалуйста, выберите все три столбца.")
@@ -885,8 +876,7 @@ with tab1:
 
         except Exception as e:
             st.error(f"Ошибка при обработке: {e}")
-            logging.error(f"Ошибка: {e}, файл: {uploaded_file.name if uploaded_file else 'ручной ввод'}")
-            # Отправляем ошибку в Telegram
+            logging.error(f"Ошибка: {e}")
             send_telegram(f"Ошибка в загрузке файла: {e}")
 
 # ---------- Вкладка 2: Ручной ввод ----------
@@ -1021,3 +1011,167 @@ with tab3:
             st.error(f"Ошибка обработки: {e}")
             logging.error(f"Ошибка обработки свайных данных: {e}")
             send_telegram(f"Ошибка обработки свайных данных: {e}")
+
+# ---------- Вкладка 4: Подбор тензодатчиков ----------
+with tab4:
+    st.subheader("📋 Подбор тензодатчиков для задач мониторинга")
+    st.markdown("""
+    **Калькулятор** помогает выбрать оптимальный тип виброструнного датчика в зависимости от:
+    - **измеряемого параметра** (деформация, напряжение, давление грунта и др.),
+    - **места установки** (бетон, сталь, грунт),
+    - **дополнительных требований** (водонепроницаемость, точность).
+    """)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        parameter = st.selectbox(
+            "Что нужно измерять?",
+            [
+                "Деформация (осадка, перемещение)",
+                "Напряжение в бетоне/арматуре",
+                "Давление грунта (напряжения в массиве)",
+                "Крен (наклон) конструкции",
+                "Температура (в комплексе с деформацией)"
+            ],
+            index=0,
+            key="param_select"
+        )
+    with col2:
+        surface = st.selectbox(
+            "Где устанавливается датчик?",
+            [
+                "На поверхность бетона",
+                "Внутрь бетона (встроенный)",
+                "На поверхность стали",
+                "В грунт (засыпка)",
+                "На арматуру (сварка/прикрутка)"
+            ],
+            index=0,
+            key="surface_select"
+        )
+
+    col3, col4 = st.columns(2)
+    with col3:
+        waterproof_required = st.checkbox("Требуется водонепроницаемость (глубокое заложение, > 5 м)", value=False)
+    with col4:
+        high_accuracy = st.checkbox("Высокая точность (разрешение < 1 μϵ)", value=False)
+
+    if st.button("Подобрать датчик", key="calc_sensor"):
+        # Логика подбора
+        recommendations = []
+        sensor_features = {
+            "MAS‑VWS‑EM15H (встроенный)": {
+                "параметры": ["деформация", "напряжение", "крен", "температура"],
+                "поверхность": ["внутрь бетона", "на арматуру"],
+                "водозащита": False,
+                "точность": "средняя"
+            },
+            "MAS‑VWS‑SM15 (поверхностный)": {
+                "параметры": ["деформация", "крен", "температура"],
+                "поверхность": ["на поверхность бетона", "на поверхность стали"],
+                "водозащита": False,
+                "точность": "средняя"
+            },
+            "MAS‑VWS‑SM25H (поверхностный длинная база)": {
+                "параметры": ["деформация", "напряжение", "температура"],
+                "поверхность": ["на поверхность бетона", "на поверхность стали"],
+                "водозащита": True,
+                "точность": "высокая"
+            },
+            "MAS‑VWE (давление грунта)": {
+                "параметры": ["давление грунта", "напряжение"],
+                "поверхность": ["в грунт"],
+                "водозащита": True,
+                "точность": "высокая"
+            }
+        }
+
+        param_keywords = {
+            "Деформация (осадка, перемещение)": "деформация",
+            "Напряжение в бетоне/арматуре": "напряжение",
+            "Давление грунта (напряжения в массиве)": "давление грунта",
+            "Крен (наклон) конструкции": "крен",
+            "Температура (в комплексе с деформацией)": "температура"
+        }
+        param_key = param_keywords.get(parameter, "деформация")
+
+        surface_keywords = {
+            "На поверхность бетона": "на поверхность бетона",
+            "Внутрь бетона (встроенный)": "внутрь бетона",
+            "На поверхность стали": "на поверхность стали",
+            "В грунт (засыпка)": "в грунт",
+            "На арматуру (сварка/прикрутка)": "на арматуру"
+        }
+        surface_key = surface_keywords.get(surface, "")
+
+        for sensor, features in sensor_features.items():
+            score = 0
+            reasons = []
+
+            if param_key in features["параметры"]:
+                score += 2
+                reasons.append(f"✓ подходит для измерения '{param_key}'")
+            else:
+                reasons.append(f"✗ не предназначен для '{param_key}'")
+
+            if surface_key in features["поверхность"]:
+                score += 2
+                reasons.append(f"✓ подходит для монтажа '{surface_key}'")
+            else:
+                reasons.append(f"✗ не подходит для '{surface_key}'")
+
+            if waterproof_required:
+                if features["водозащита"]:
+                    score += 1
+                    reasons.append("✓ обладает водонепроницаемостью")
+                else:
+                    reasons.append("✗ недостаточная водозащита")
+
+            if high_accuracy:
+                if features["точность"] == "высокая":
+                    score += 1
+                    reasons.append("✓ высокое разрешение")
+                else:
+                    reasons.append("✗ среднее разрешение (требуется высокая точность)")
+
+            if score > 0:
+                recommendations.append({
+                    "датчик": sensor,
+                    "балл": score,
+                    "причины": reasons
+                })
+
+        recommendations.sort(key=lambda x: x["балл"], reverse=True)
+
+        if recommendations:
+            st.success(f"✅ Найдено {len(recommendations)} подходящих датчиков")
+
+            rows = []
+            for rec in recommendations:
+                reasons_text = "; ".join(rec["причины"])
+                rows.append({
+                    "Датчик": rec["датчик"],
+                    "Совместимость (балл)": rec["балл"],
+                    "Обоснование": reasons_text
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+            st.subheader("📘 Детальные характеристики")
+            for rec in recommendations:
+                sensor = rec["датчик"]
+                with st.expander(f"📐 {sensor} (совместимость: {rec['балл']} баллов)"):
+                    specs_text = get_sensor_specs(sensor)
+                    st.text(specs_text)
+                    st.markdown("**Рекомендации по монтажу:**")
+                    if "MAS‑VWS‑EM15H" in sensor:
+                        st.markdown("- Встраивается в бетон при заливке или крепится на арматуру.")
+                    elif "MAS‑VWS‑SM15" in sensor:
+                        st.markdown("- Приваривается на стальные конструкции или приклеивается на бетон (эпоксидным клеем).")
+                    elif "MAS‑VWS‑SM25H" in sensor:
+                        st.markdown("- Приваривается на сталь или приклеивается на бетон, подходит для влажной среды (водонепроницаем).")
+                    elif "MAS‑VWE" in sensor:
+                        st.markdown("- Закапывается в грунт или устанавливается в насыпь, требуется защита кабеля.")
+        else:
+            st.warning("Не найдено подходящих датчиков. Попробуйте изменить параметры.")
+
+        st.caption("Подбор основан на технических характеристиках датчиков из документации. Окончательное решение принимается проектировщиком.")
