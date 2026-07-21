@@ -804,14 +804,17 @@ with st.sidebar:
         """)
 
     # ---------- ОБРАТНАЯ СВЯЗЬ (Telegram) ----------
-    st.markdown("---")
+        st.markdown("---")
     st.subheader("📧 Обратная связь")
     with st.expander("Сообщить об ошибке"):
+        user_name = st.text_input("Ваше имя (или ник в Telegram)", key="user_name")
+        user_email = st.text_input("Ваш email (чтобы я мог ответить)", key="user_email")
         error_text = st.text_area("Опишите проблему", key="feedback_text")
         if st.button("Отправить", key="send_feedback"):
             if error_text:
                 try:
-                    if send_telegram(error_text):
+                    message = f"От: {user_name or 'Аноним'}\nEmail: {user_email or 'не указан'}\nСообщение: {error_text}"
+                    if send_telegram(message):
                         st.success("✅ Спасибо! Сообщение отправлено.")
                     else:
                         st.error("❌ Не удалось отправить. Попробуйте позже.")
