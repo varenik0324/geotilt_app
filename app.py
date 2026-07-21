@@ -17,6 +17,26 @@ import re
 from docx import Document
 from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import logging
+import sqlite3
+
+# ========== ЛОГГИРОВАНИЕ ==========
+logging.basicConfig(filename='app_errors.log', level=logging.ERROR,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# ========== ПРОВЕРКА ОБНОВЛЕНИЙ ==========
+def check_for_updates():
+    try:
+        import requests
+        url = "https://your-server.com/version.txt"  # ЗАМЕНИТЕ НА РЕАЛЬНЫЙ URL
+        r = requests.get(url, timeout=3)
+        if r.status_code == 200:
+            latest_version = r.text.strip()
+            current_version = "1.0"
+            if latest_version != current_version:
+                st.warning(f"Доступна новая версия {latest_version}! Пожалуйста, обновитесь.")
+    except:
+        pass  # если нет интернета или файл недоступен, просто игнорируем
 
 # ------------------------------------------------------------
 # Путь к ресурсам
@@ -366,6 +386,33 @@ def generate_word_report(df, stats, sensor_name):
     buffer.seek(0)
     return buffer
 
+# ========== СОХРАНЕНИЕ В БАЗУ ДАННЫХ ==========
+def save_to_db(df, sensor_name):
+    try:
+        conn = sqlite3.connect('measurements.db')
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS results
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      sensor_name TEXT,
+                      date TEXT,
+                      load REAL,
+                      freq REAL,
+                      temp REAL,
+                      strain REAL,
+                      stress_MPa REAL)''')
+        for _, row in df.iterrows():
+            c.execute("INSERT INTO results (sensor_name, date, load, freq, temp, strain, stress_MPa) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                      (sensor_name, datetime.now().isoformat(), row['load'], row['freq'], row['temp'], row['strain'], row['stress_MPa']))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка сохранения в базу: {e}")
+        return False
+
+# ------------------------------------------------------------
+# Отображение результатов
+# ------------------------------------------------------------
 def display_results(result, stats, sensor_name):
     st.subheader("✅ Результат обработки")
     st.dataframe(result)
@@ -422,6 +469,14 @@ def display_results(result, stats, sensor_name):
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             key=f"download_word_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
+
+    # ---------- КНОПКА СОХРАНЕНИЯ В БАЗУ ----------
+    st.subheader("💾 Сохранить в базу данных")
+    if st.button("Сохранить текущий результат в базу"):
+        if save_to_db(result, sensor_name):
+            st.success("Данные сохранены в базу!")
+        else:
+            st.error("Ошибка сохранения в базу. Проверьте логи.")
 
 # ------------------------------------------------------------
 # ПАРСИНГ СВАЙНЫХ ИСПЫТАНИЙ (без изменений)
@@ -645,10 +700,12 @@ def parse_pile_data(file_bytes):
 st.set_page_config(page_title="Анализ датчиков", layout="wide")
 st.title("📊 Обработка данных тензодатчиков")
 
+# Проверка обновлений
+check_for_updates()
+
 # Боковая панель
 with st.sidebar:
     st.header("Настройки датчика")
-    # Виджеты используют session_state как key, но мы не пишем в них программно
     sensor_type = st.selectbox(
         "Тип датчика",
         [
@@ -706,6 +763,31 @@ with st.sidebar:
     st.markdown("### 🏗️ Геофундамент")
     st.caption("© 2026, все права защищены")
 
+    # ---------- ДОКУМЕНТАЦИЯ ----------
+    st.markdown("---")
+    with st.expander("📖 Помощь"):
+        st.markdown("""
+**Как пользоваться приложением:**
+
+1. **Загрузка файла** – выберите Excel-файл с колонками: нагрузка, частота, температура.
+2. **Ручной ввод** – вставьте данные из буфера обмена.
+3. **Свайные испытания** – загрузите файл с листами "Свая..." и "Испытания".
+4. **Настройки** – выберите тип датчика, укажите f₀ и T₀.
+5. **Результаты** – вы можете скачать отчёт в Excel, PDF или Word.
+
+**Форматы файлов:** .xlsx, .xls
+        """)
+
+    # ---------- ОБРАТНАЯ СВЯЗЬ ----------
+    st.markdown("---")
+    st.subheader("📧 Обратная связь")
+    with st.expander("Сообщить об ошибке"):
+        error_text = st.text_area("Опишите проблему")
+        if st.button("Отправить"):
+            if error_text:
+                logging.error(f"Сообщение пользователя: {error_text}")
+                st.success("Спасибо! Мы получили ваше сообщение.")
+
 # ------------------------------------------------------------
 # Вкладки
 # ------------------------------------------------------------
@@ -750,7 +832,6 @@ with tab1:
             df_mapped = df_raw[[col_load, col_freq, col_temp]].copy()
             df_mapped.columns = ['load', 'freq', 'temp']
 
-            # Сохраняем текущие настройки в report_* переменные (для отчётов)
             st.session_state.report_sensor_type = sensor_type
             st.session_state.report_f0 = f0
             st.session_state.report_t0 = t0
@@ -768,6 +849,7 @@ with tab1:
 
         except Exception as e:
             st.error(f"Ошибка при обработке: {e}")
+            logging.error(f"Ошибка: {e}, файл: {uploaded_file.name if uploaded_file else 'ручной ввод'}")
 
 # ---------- Вкладка 2: Ручной ввод ----------
 with tab2:
@@ -818,7 +900,6 @@ with tab2:
                 else:
                     df_manual = pd.DataFrame(rows, columns=['load', 'freq', 'temp'])
 
-                    # Сохраняем текущие настройки в report_* переменные
                     st.session_state.report_sensor_type = sensor_type
                     st.session_state.report_f0 = f0
                     st.session_state.report_t0 = t0
@@ -836,6 +917,7 @@ with tab2:
 
             except Exception as e:
                 st.error(f"Ошибка при обработке: {e}")
+                logging.error(f"Ошибка ручного ввода: {e}")
 
 # ---------- Вкладка 3: Свайные испытания ----------
 with tab3:
@@ -898,3 +980,4 @@ with tab3:
 
         except Exception as e:
             st.error(f"Ошибка обработки: {e}")
+            logging.error(f"Ошибка обработки свайных данных: {e}")
