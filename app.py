@@ -22,8 +22,8 @@ import sqlite3
 import requests  # для Telegram
 
 # ========== НАСТРОЙКИ TELEGRAM ==========
-BOT_TOKEN = "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"  # ЗАМЕНИ НА РЕАЛЬНЫЙ ТОКЕН
-CHAT_ID = "1278271780"  # твой chat_id
+BOT_TOKEN = "8538186715:AAG7XsBxp6TAy2lalWQ6_KkBkrUIEZCqxuw"  # ЗАМЕНИ НА РЕАЛЬНЫЙ ТОКЕН
+CHAT_ID = "8538186715"  # твой chat_id
 
 # ========== ЛОГГИРОВАНИЕ ==========
 logging.basicConfig(filename='app_errors.log', level=logging.ERROR,
