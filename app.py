@@ -200,6 +200,8 @@ if 'report_g_val' not in st.session_state:
     st.session_state.report_g_val = None
 if 'report_c_val' not in st.session_state:
     st.session_state.report_c_val = None
+if 'template' not in st.session_state:
+    st.session_state.template = 'plotly_white'
 
 # ------------------------------------------------------------
 # Обработка тензодатчиков
@@ -424,7 +426,7 @@ def save_to_db(df, sensor_name):
         return False
 
 # ------------------------------------------------------------
-# Отображение результатов
+# Отображение результатов (обновлено с учётом темы)
 # ------------------------------------------------------------
 def display_results(result, stats, sensor_name):
     st.subheader("✅ Результат обработки")
@@ -436,7 +438,7 @@ def display_results(result, stats, sensor_name):
         title="Деформация от нагрузки",
         xaxis_title="Нагрузка, тс",
         yaxis_title="Деформация, μϵ",
-        template="plotly_white"
+        template=st.session_state.get('template', 'plotly_white')
     )
     logo_path = get_resource_path("logo.png")
     if os.path.exists(logo_path):
@@ -751,6 +753,23 @@ with st.sidebar:
     f0 = st.number_input("f₀ (Гц)", value=1000.0, step=0.1, format="%.1f", key="f0")
     t0 = st.number_input("T₀ (°C)", value=20.0, step=0.1, format="%.1f", key="t0")
 
+    # Выбор темы
+    st.markdown("---")
+    st.subheader("🎨 Оформление")
+    theme = st.selectbox(
+        "Тема графиков",
+        ["Светлая", "Тёмная", "Корпоративная (синяя)"],
+        index=0,
+        key="theme"
+    )
+    if theme == "Светлая":
+        template = "plotly_white"
+    elif theme == "Тёмная":
+        template = "plotly_dark"
+    else:
+        template = "seaborn"
+    st.session_state.template = template
+
     if st.button("Сохранить настройки"):
         config = st.session_state.config
         config['sensor_type'] = sensor_type
@@ -783,8 +802,10 @@ with st.sidebar:
 2. **Ручной ввод** – вставьте данные из буфера обмена.
 3. **Свайные испытания** – загрузите файл с листами "Свая..." и "Испытания".
 4. **Подбор датчиков** – выберите параметры и получите рекомендации.
-5. **Настройки** – выберите тип датчика, укажите f₀ и T₀.
-6. **Результаты** – скачайте отчёт в Excel, PDF или Word.
+5. **Интерактивная калибровка** – настройте параметры ползунками в реальном времени.
+6. **Сравнение датчиков** – загрузите несколько файлов для сравнения.
+7. **Настройки** – выберите тип датчика, укажите f₀ и T₀.
+8. **Результаты** – скачайте отчёт в Excel, PDF или Word.
 
 **Форматы файлов:** .xlsx, .xls
         """)
@@ -810,9 +831,16 @@ with st.sidebar:
                 st.warning("Напишите текст сообщения.")
 
 # ------------------------------------------------------------
-# Вкладки
+# Вкладки (теперь 6)
 # ------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs(["📂 Загрузка файла", "✏️ Ручной ввод", "🧪 Свайные испытания", "📋 Подбор датчиков"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📂 Загрузка файла",
+    "✏️ Ручной ввод",
+    "🧪 Свайные испытания",
+    "📋 Подбор датчиков",
+    "📈 Интерактивная калибровка",
+    "📊 Сравнение датчиков"
+])
 
 # ---------- Вкладка 1: Загрузка файла ----------
 with tab1:
@@ -992,7 +1020,7 @@ with tab3:
                                     title=f"Зависимость давления от нагрузки ({sensor_name})",
                                     xaxis_title="Нагрузка, тс",
                                     yaxis_title="Давление, МПа",
-                                    template="plotly_white"
+                                    template=st.session_state.get('template', 'plotly_white')
                                 )
                                 st.plotly_chart(fig, use_container_width=True)
                             else:
@@ -1012,7 +1040,7 @@ with tab3:
             logging.error(f"Ошибка обработки свайных данных: {e}")
             send_telegram(f"Ошибка обработки свайных данных: {e}")
 
-# ---------- Вкладка 4: Подбор тензодатчиков ----------
+# ---------- Вкладка 4: Подбор датчиков ----------
 with tab4:
     st.subheader("📋 Подбор тензодатчиков для задач мониторинга")
     st.markdown("""
@@ -1057,7 +1085,6 @@ with tab4:
         high_accuracy = st.checkbox("Высокая точность (разрешение < 1 μϵ)", value=False)
 
     if st.button("Подобрать датчик", key="calc_sensor"):
-        # Логика подбора
         recommendations = []
         sensor_features = {
             "MAS‑VWS‑EM15H (встроенный)": {
@@ -1175,3 +1202,136 @@ with tab4:
             st.warning("Не найдено подходящих датчиков. Попробуйте изменить параметры.")
 
         st.caption("Подбор основан на технических характеристиках датчиков из документации. Окончательное решение принимается проектировщиком.")
+
+# ---------- Вкладка 5: Интерактивная калибровка ----------
+with tab5:
+    st.subheader("🎛️ Интерактивная калибровка датчика")
+    st.markdown("""
+    Изменяйте параметры ползунками – график и статистика будут пересчитываться **в реальном времени**.
+    """)
+
+    if st.session_state.result is not None:
+        df_orig = st.session_state.result.copy()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            f0_cal = st.slider("f₀ (Гц)", min_value=500.0, max_value=2000.0,
+                               value=st.session_state.report_f0, step=0.5, key="f0_cal")
+            t0_cal = st.slider("T₀ (°C)", min_value=-20.0, max_value=50.0,
+                               value=st.session_state.report_t0, step=0.5, key="t0_cal")
+        with col2:
+            g_cal = st.slider("G (если нужен)", min_value=0.5, max_value=2.0,
+                              value=st.session_state.report_g_val or 1.0, step=0.001, key="g_cal")
+            c_cal = st.slider("C (если нужен)", min_value=0.5, max_value=2.0,
+                              value=st.session_state.report_c_val or 1.0, step=0.001, key="c_cal")
+
+        sensor_type = st.session_state.report_sensor_type
+        if sensor_type in ["MAS‑VWS‑EM15H (встроенный)", "MAS‑VWS‑SM25H (поверхностный длинная база)"]:
+            K = DEFAULT_K_EM15H if "EM15H" in sensor_type else DEFAULT_K_SM25H
+        else:
+            K = g_cal * c_cal
+
+        df_cal = df_orig.copy()
+        df_cal['strain'] = K * (df_cal['freq']**2 - f0_cal**2) + (df_cal['temp'] - t0_cal) * (F_STRING - F_CONCRETE)
+        df_cal['stress_MPa'] = E_MODULUS * df_cal['strain'] / 1_000_000 * 0.00689476
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_cal['load'], y=df_cal['strain'], mode='lines+markers', name='Деформация, μϵ'))
+        fig.update_layout(
+            title="Деформация от нагрузки (интерактивная калибровка)",
+            xaxis_title="Нагрузка, тс",
+            yaxis_title="Деформация, μϵ",
+            template=st.session_state.template
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        stats_cal = {
+            'Средняя деформация, μϵ': df_cal['strain'].mean(),
+            'Макс. деформация, μϵ': df_cal['strain'].max(),
+            'Мин. деформация, μϵ': df_cal['strain'].min(),
+            'Среднее напряжение, МПа': df_cal['stress_MPa'].mean(),
+        }
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Средняя деформация", f"{stats_cal['Средняя деформация, μϵ']:.1f} μϵ")
+            st.metric("Макс. деформация", f"{stats_cal['Макс. деформация, μϵ']:.1f} μϵ")
+        with col2:
+            st.metric("Среднее напряжение", f"{stats_cal['Среднее напряжение, МПа']:.3f} МПа")
+            st.metric("Мин. деформация", f"{stats_cal['Мин. деформация, μϵ']:.1f} μϵ")
+
+        if st.button("Применить эти параметры к отчёту"):
+            st.session_state.report_f0 = f0_cal
+            st.session_state.report_t0 = t0_cal
+            st.session_state.report_g_val = g_cal
+            st.session_state.report_c_val = c_cal
+            st.session_state.result = df_cal
+            st.success("Параметры обновлены! Теперь скачивайте отчёт с новыми значениями.")
+    else:
+        st.info("Сначала загрузите данные в вкладке 'Загрузка файла' или 'Ручной ввод'.")
+
+# ---------- Вкладка 6: Сравнение датчиков ----------
+with tab6:
+    st.subheader("📊 Сравнение нескольких датчиков")
+    st.markdown("""
+    Загрузите несколько файлов (или вставьте данные) для сравнения на одном графике.
+    """)
+
+    uploaded_files = st.file_uploader(
+        "Выберите файлы .xlsx или .xls",
+        type=["xlsx", "xls"],
+        accept_multiple_files=True,
+        key="multi_upload"
+    )
+
+    compare_what = st.selectbox(
+        "Что сравнивать?",
+        ["Деформация, μϵ", "Напряжение, МПа", "Частота, Гц"],
+        index=0,
+        key="compare_what"
+    )
+
+    if uploaded_files:
+        fig_comp = go.Figure()
+        for file in uploaded_files:
+            try:
+                df_raw = pd.read_excel(file)
+                if len(df_raw.columns) >= 3:
+                    df_comp = df_raw.iloc[:, :3].copy()
+                    df_comp.columns = ['load', 'freq', 'temp']
+                else:
+                    st.warning(f"Файл {file.name} содержит менее 3 колонок, пропускаем.")
+                    continue
+
+                sensor_type = st.session_state.report_sensor_type
+                if sensor_type in ["MAS‑VWS‑EM15H (встроенный)", "MAS‑VWS‑SM25H (поверхностный длинная база)"]:
+                    K = DEFAULT_K_EM15H if "EM15H" in sensor_type else DEFAULT_K_SM25H
+                else:
+                    K = st.session_state.report_g_val * st.session_state.report_c_val if st.session_state.report_g_val and st.session_state.report_c_val else 1.0
+
+                f0_comp = st.session_state.report_f0
+                t0_comp = st.session_state.report_t0
+                df_comp['strain'] = K * (df_comp['freq']**2 - f0_comp**2) + (df_comp['temp'] - t0_comp) * (F_STRING - F_CONCRETE)
+                df_comp['stress_MPa'] = E_MODULUS * df_comp['strain'] / 1_000_000 * 0.00689476
+
+                y_col = {'Деформация, μϵ': 'strain', 'Напряжение, МПа': 'stress_MPa', 'Частота, Гц': 'freq'}[compare_what]
+                fig_comp.add_trace(go.Scatter(
+                    x=df_comp['load'],
+                    y=df_comp[y_col],
+                    mode='lines+markers',
+                    name=file.name
+                ))
+            except Exception as e:
+                st.warning(f"Ошибка обработки файла {file.name}: {e}")
+
+        if fig_comp.data:
+            fig_comp.update_layout(
+                title=f"Сравнение датчиков по параметру: {compare_what}",
+                xaxis_title="Нагрузка, тс",
+                yaxis_title=compare_what,
+                template=st.session_state.template
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+        else:
+            st.warning("Не удалось обработать ни одного файла.")
+    else:
+        st.info("Загрузите файлы для сравнения.")
