@@ -152,7 +152,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return "\n".join(lines)
 
 # ------------------------------------------------------------
-# ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
+# ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (для плоских таблиц)
 # ------------------------------------------------------------
 class DataProcessor:
     @staticmethod
@@ -253,7 +253,7 @@ class ReportGenerator:
         return io.BytesIO()
 
 # ------------------------------------------------------------
-# ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (УЛУЧШЕННЫЙ)
+# ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (УЛУЧШЕННЫЙ, АВТОМАТИЧЕСКИЙ)
 # ------------------------------------------------------------
 class PileParser:
     @staticmethod
@@ -331,6 +331,7 @@ class PileParser:
         headers = df_test_raw.iloc[header_row].tolist()
         headers = [str(h).strip() if pd.notna(h) else '' for h in headers]
 
+        # Определяем ступени по заголовкам "Ступень X"
         step_columns = {}
         current_step = None
         step_pattern = re.compile(r'Ступень\s*(\d+)', re.IGNORECASE)
@@ -368,25 +369,22 @@ class PileParser:
 
         info['debug'].append(f"Найдены ступени: {list(step_columns.keys())}")
 
-        # Отладочный вывод первых строк после заголовка
+        # Отладка: показываем первые 20 строк после заголовка
         debug_rows = []
-        for idx in range(header_row + 1, min(header_row + 15, len(df_test_raw))):
+        for idx in range(header_row + 1, min(header_row + 25, len(df_test_raw))):
             row = df_test_raw.iloc[idx]
             first_cell = str(row[0]).strip() if len(row) > 0 else ''
-            debug_rows.append(first_cell)
-        info['debug'].append(f"Первые строки после заголовка (первый столбец): {debug_rows}")
+            debug_rows.append(f"Строка {idx}: '{first_cell}'")
+        info['debug'].append("Первые строки после заголовка (первый столбец):")
+        info['debug'].extend(debug_rows)
 
-        # Ищем строки датчиков: первая ячейка содержит 'верх', 'сред' или 'низ' и не содержит служебные фразы
-        exclude_phrases = ['Верх сваи', 'Низ сваи', 'Под пятой', 'уровень']
+        # Ищем строки датчиков: номер-й + верх/сред/низ
         sensor_rows = []
         for idx in range(header_row + 1, len(df_test_raw)):
             row = df_test_raw.iloc[idx]
             first_cell = str(row[0]).strip() if len(row) > 0 else ''
-            if not first_cell:
-                continue
-            if any(phrase in first_cell for phrase in exclude_phrases):
-                continue
-            if any(keyword in first_cell for keyword in ['верх', 'сред', 'низ']):
+            # Проверяем шаблон: цифра-й верх/сред/низ
+            if re.search(r'\d-й\s*(верх|сред|низ)', first_cell, re.IGNORECASE):
                 sensor_rows.append(idx)
 
         info['debug'].append(f"Найдено строк датчиков: {len(sensor_rows)}")
@@ -420,7 +418,7 @@ class PileParser:
             for idx in range(zero_header_row + 1, len(df_zero_raw)):
                 row = df_zero_raw.iloc[idx]
                 first_cell = str(row[0]).strip() if len(row) > 0 else ''
-                if any(keyword in first_cell for keyword in ['верх', 'сред', 'низ']):
+                if re.search(r'\d-й\s*(верх|сред|низ)', first_cell, re.IGNORECASE):
                     sensor_name = first_cell
                     f_val = row[freq_col] if freq_col < len(row) and pd.notna(row[freq_col]) else np.nan
                     t_val = row[temp_col] if temp_col < len(row) and pd.notna(row[temp_col]) else np.nan
