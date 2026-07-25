@@ -152,7 +152,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return "\n".join(lines)
 
 # ------------------------------------------------------------
-# КЛАСС ДЛЯ ОБРАБОТКИ ДАННЫХ (тензодатчики)
+# ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
 # ------------------------------------------------------------
 class DataProcessor:
     @staticmethod
@@ -224,7 +224,7 @@ class DataProcessor:
         return df, stats
 
 # ------------------------------------------------------------
-# ГЕНЕРАЦИЯ ОТЧЁТОВ (заглушки для краткости)
+# ГЕНЕРАЦИЯ ОТЧЁТОВ (заглушки)
 # ------------------------------------------------------------
 class ReportGenerator:
     @staticmethod
@@ -253,7 +253,7 @@ class ReportGenerator:
         return io.BytesIO()
 
 # ------------------------------------------------------------
-# НОВЫЙ ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (АВТОМАТИЧЕСКИЙ)
+# ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (УЛУЧШЕННЫЙ)
 # ------------------------------------------------------------
 class PileParser:
     @staticmethod
@@ -368,20 +368,33 @@ class PileParser:
 
         info['debug'].append(f"Найдены ступени: {list(step_columns.keys())}")
 
+        # Отладочный вывод первых строк после заголовка
+        debug_rows = []
+        for idx in range(header_row + 1, min(header_row + 15, len(df_test_raw))):
+            row = df_test_raw.iloc[idx]
+            first_cell = str(row[0]).strip() if len(row) > 0 else ''
+            debug_rows.append(first_cell)
+        info['debug'].append(f"Первые строки после заголовка (первый столбец): {debug_rows}")
+
+        # Ищем строки датчиков: первая ячейка содержит 'верх', 'сред' или 'низ' и не содержит служебные фразы
+        exclude_phrases = ['Верх сваи', 'Низ сваи', 'Под пятой', 'уровень']
         sensor_rows = []
         for idx in range(header_row + 1, len(df_test_raw)):
             row = df_test_raw.iloc[idx]
             first_cell = str(row[0]).strip() if len(row) > 0 else ''
-            if re.search(r'\d-й\s*(верх|сред|низ)', first_cell, re.IGNORECASE) or \
-               re.search(r'(верх|сред|низ)', first_cell, re.IGNORECASE):
+            if not first_cell:
+                continue
+            if any(phrase in first_cell for phrase in exclude_phrases):
+                continue
+            if any(keyword in first_cell for keyword in ['верх', 'сред', 'низ']):
                 sensor_rows.append(idx)
 
         info['debug'].append(f"Найдено строк датчиков: {len(sensor_rows)}")
-
         if not sensor_rows:
             info['debug'].append("Датчики не найдены.")
             return {}, info
 
+        # Парсим нулевые значения из всех нулевых листов
         zero_data = {}
         for sheet in zero_sheets:
             df_zero_raw = pd.read_excel(file_bytes, sheet_name=sheet, header=None)
@@ -407,8 +420,7 @@ class PileParser:
             for idx in range(zero_header_row + 1, len(df_zero_raw)):
                 row = df_zero_raw.iloc[idx]
                 first_cell = str(row[0]).strip() if len(row) > 0 else ''
-                if re.search(r'\d-й\s*(верх|сред|низ)', first_cell, re.IGNORECASE) or \
-                   re.search(r'(верх|сред|низ)', first_cell, re.IGNORECASE):
+                if any(keyword in first_cell for keyword in ['верх', 'сред', 'низ']):
                     sensor_name = first_cell
                     f_val = row[freq_col] if freq_col < len(row) and pd.notna(row[freq_col]) else np.nan
                     t_val = row[temp_col] if temp_col < len(row) and pd.notna(row[temp_col]) else np.nan
@@ -417,6 +429,7 @@ class PileParser:
 
         info['debug'].append(f"Нулевых значений получено: {len(zero_data)}")
 
+        # Собираем данные для каждого датчика
         results = {}
         for idx in sensor_rows:
             row = df_test_raw.iloc[idx]
@@ -645,7 +658,6 @@ def main():
                             st.session_state.result = result
                             st.session_state.stats = stats
                             st.session_state.sensor_name = uploaded_file.name
-                            # Отображение результатов (здесь можно добавить функцию display_flat_results)
                             st.dataframe(result)
                             fig = go.Figure()
                             fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
@@ -661,13 +673,12 @@ def main():
                 st.error(f"Ошибка: {e}")
                 logging.error(f"Ошибка в загрузке: {e}")
 
-    # ---------- Вкладка 2: Ручной ввод ----------
+    # ---------- Вкладка 2: Ручной ввод (упрощённо) ----------
     with tab2:
         st.subheader("Вставьте данные из буфера обмена")
-        st.info("Вставьте данные в формате: нагрузка, частота, температура.")
-        # (код можно добавить при необходимости)
+        st.info("Вставьте данные в формате: нагрузка, частота, температура (разделитель – пробел, запятая или табуляция).")
 
-    # ---------- Вкладка 3: Свайные испытания (НОВЫЙ ПАРСЕР) ----------
+    # ---------- Вкладка 3: Свайные испытания (ОСНОВНАЯ) ----------
     with tab3:
         st.subheader("📂 Загрузка файла с испытаниями свай")
         st.markdown("""
