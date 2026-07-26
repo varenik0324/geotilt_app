@@ -72,63 +72,109 @@ def load_profiles() -> Dict:
             return json.load(f)
     return {}
 
+def get_pdf_path(filename: str) -> Optional[str]:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    pdf_path = os.path.join(base_dir, 'docs', filename)
+    if os.path.exists(pdf_path):
+        return pdf_path
+    return None
+
 # ============================================================
-# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные)
+# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные из PDF-руководств)
 # ============================================================
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
-        "type": "Виброструнный тензометр",
+        "type": "Виброструнный тензометр (встроенный)",
         "k_factor": "0.0031559",
         "measuring_range": "±1500 μϵ",
         "accuracy": "0.5% F.S",
         "resolution": "1.0 μϵ",
         "temperature_range": "-20…+80 °C",
+        "temperature_accuracy": "±0.5 °C",
         "waterproof": "≥0.5 МПа",
+        "gauge_length": "150 мм",
+        "thermal_expansion_steel": "12.2 μϵ/°C",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
         "application": "Мониторинг мостов, зданий, плотин, труб, свай.",
         "installation": "Встраивается в бетон при заливке или крепится на арматуру.",
-        "link": "https://example.com/em15h"
+        "principle": "Принцип работы основан на виброструнном методе: изменение деформации конструкции передаётся на стальную струну, меняя её частоту колебаний.",
+        "pdf_file": "MAS-VWS-EM15H.pdf"
     },
     "MAS‑VWS‑SM15 (поверхностный)": {
-        "type": "Виброструнный тензометр (короткая база)",
-        "k_factor": "G × C",
+        "type": "Виброструнный тензометр (поверхностный, короткая база)",
+        "k_factor": "G × C (из сертификата)",
         "measuring_range": "±1500 μϵ",
         "accuracy": "0.5% F.S",
+        "sensitivity": "≤0.125% FS",
         "resolution": "1.0 μϵ",
         "temperature_range": "-20…+80 °C",
+        "temperature_accuracy": "±0.5 °C",
         "waterproof": "≥0.5 МПа",
+        "gauge_length": "150 мм",
+        "thermal_expansion_steel": "12.2 μϵ/°C",
+        "thermal_expansion_concrete": "10.0 μϵ/°C (зависит от бетона)",
         "application": "Мониторинг строительных конструкций, мостов, тоннелей, свай.",
-        "installation": "Приваривается на стальные конструкции или приклеивается на бетон.",
-        "link": "https://example.com/sm15"
+        "installation": "Приваривается на стальные конструкции или приклеивается на бетон (эпоксидным клеем). Для бетона используются анкерные головки или специальный клей.",
+        "principle": "Виброструнный датчик: деформация основания передаётся на струну, частота колебаний которой пропорциональна деформации.",
+        "pdf_file": "MAS-VWS-SM15.pdf"
     },
     "MAS‑VWS‑SM25H (поверхностный длинная база)": {
-        "type": "Виброструнный тензометр (длинная база)",
+        "type": "Виброструнный тензометр (поверхностный, длинная база)",
         "k_factor": "0.0035708",
         "measuring_range": "±2500 μϵ",
         "accuracy": "0.5% F.S",
         "resolution": "0.1 μϵ",
         "temperature_range": "-40…+90 °C",
-        "waterproof": "≥0.5 МПа",
-        "application": "Мониторинг больших конструкций (плотины, мосты, тоннели).",
-        "installation": "Приваривается на сталь или приклеивается на бетон, подходит для влажной среды.",
-        "link": "https://example.com/sm25h"
+        "temperature_accuracy": "±0.5 °C",
+        "waterproof": "≥0.5 МПа (глубина до 150 м)",
+        "gauge_length": "129 мм",
+        "thermal_expansion_steel": "12.2 μϵ/°C",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "application": "Мониторинг больших конструкций (плотины, мосты, тоннели), где требуется высокая точность и большой диапазон.",
+        "installation": "Приваривается на сталь или приклеивается на бетон. Для бетона используются анкерные болты или специальный клей. Требует тщательной подготовки поверхности.",
+        "principle": "Классический виброструнный принцип: натянутая струна изменяет частоту при деформации, что позволяет с высокой точностью измерять относительные деформации.",
+        "pdf_file": "MAS-VWS-SM25H.pdf"
     },
     "MAS‑VWE (давление грунта)": {
         "type": "Виброструнный датчик давления грунта",
-        "k_factor": "G × C",
+        "k_factor": "G × C (из сертификата)",
         "measuring_range": "0…350/700/1000/2000/3000 кПа",
         "accuracy": "0.5% F.S",
         "resolution": "0.01 кПа",
         "temperature_range": "-40…+80 °C",
-        "waterproof": "≥1.0 МПа",
-        "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей.",
-        "installation": "Закапывается в грунт или устанавливается в насыпь, требуется защита кабеля.",
-        "link": "https://example.com/vwe"
+        "temperature_accuracy": "±0.5 °C (@ -10…70 °C)",
+        "waterproof": "≥1.0 МПа (до 1.2 × номинального давления)",
+        "over_range": "1.5 × номинального давления",
+        "insulation_resistance": "≥50 МОм",
+        "size": "Φ25×160 мм",
+        "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей. Измерение напряжений в грунте.",
+        "installation": "Закапывается в грунт или устанавливается в насыпь, требуется защита кабеля. Для надёжного контакта с грунтом необходима обратная засыпка с трамбовкой.",
+        "principle": "Давление грунта деформирует чувствительный элемент, который передаёт деформацию на виброструнный преобразователь, изменяя его частоту.",
+        "pdf_file": "MAS-VWE.pdf"
     }
 }
 
 def get_sensor_specs(sensor_type: str) -> str:
     specs = SENSOR_SPECS.get(sensor_type, {})
-    return "\n".join([f"{k}: {v}" for k, v in specs.items() if k != 'link']) if specs else "Характеристики не найдены."
+    if not specs:
+        return "Характеристики не найдены."
+    lines = [
+        f"🔹 Тип: {specs.get('type', 'не указан')}",
+        f"📏 Длина базы: {specs.get('gauge_length', 'не указана')}",
+        f"📊 Диапазон измерений: {specs.get('measuring_range', 'не указан')}",
+        f"🎯 Точность: {specs.get('accuracy', 'не указана')}",
+        f"🔬 Разрешение: {specs.get('resolution', 'не указано')}",
+        f"🌡️ Диапазон температур: {specs.get('temperature_range', 'не указан')}",
+        f"🌡️ Точность температуры: {specs.get('temperature_accuracy', 'не указана')}",
+        f"💧 Водонепроницаемость: {specs.get('waterproof', 'не указана')}",
+        f"🔧 Коэффициент K: {specs.get('k_factor', 'не указан')}",
+        f"🧊 Коэф. теплового расширения (сталь): {specs.get('thermal_expansion_steel', 'не указан')}",
+        f"🧊 Коэф. теплового расширения (бетон): {specs.get('thermal_expansion_concrete', 'не указан')}",
+        f"📌 Применение: {specs.get('application', 'не указано')}",
+        f"🔩 Монтаж: {specs.get('installation', 'не указан')}",
+        f"⚙️ Принцип работы: {specs.get('principle', 'не указан')}"
+    ]
+    return "\n".join(lines)
 
 # ============================================================
 # 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
@@ -654,10 +700,9 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         )
 
 # ============================================================
-# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (НОВЫЙ ИНТЕРФЕЙС)
+# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (С ОБНОВЛЁННЫМИ ССЫЛКАМИ)
 # ============================================================
 def main():
-    # --- Настройка страницы ---
     st.set_page_config(
         page_title="Анализ датчиков | Геофундамент",
         page_icon="📐",
@@ -665,7 +710,7 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # --- Инициализация состояния ---
+    # Инициализация состояния
     for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles', 'page']:
         if key not in st.session_state:
             if key == 'template':
@@ -677,17 +722,17 @@ def main():
             else:
                 st.session_state[key] = None if key not in ['profiles'] else {}
 
-    # --- Шапка ---
+    # Шапка
     col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
-        st.image("https://via.placeholder.com/80x40?text=GF", width=80)  # placeholder для лого
+        st.image("https://via.placeholder.com/80x40?text=GF", width=80)
     with col2:
         st.title("📊 Анализ данных тензодатчиков")
     with col3:
         theme_toggle = st.toggle("🌙 Тёмная тема", value=st.session_state.template == 'plotly_dark')
         st.session_state.template = 'plotly_dark' if theme_toggle else 'plotly_white'
 
-    # --- Боковая панель с навигацией ---
+    # Боковая панель
     with st.sidebar:
         st.markdown("### 🧭 Навигация")
         pages = {
@@ -710,8 +755,26 @@ def main():
         if specs:
             st.caption(f"**K:** {specs.get('k_factor')}")
             st.caption(f"**Диапазон:** {specs.get('measuring_range')}")
-            if specs.get('link'):
-                st.markdown(f"[📄 Подробнее]({specs['link']})")
+            
+            with st.expander("📄 Полная спецификация датчика", expanded=False):
+                st.text(get_sensor_specs(sensor_type))
+            
+            pdf_file = specs.get('pdf_file')
+            if pdf_file:
+                pdf_path = get_pdf_path(pdf_file)
+                if pdf_path:
+                    with open(pdf_path, 'rb') as f:
+                        pdf_bytes = f.read()
+                    st.download_button(
+                        label="📄 Скачать PDF-руководство",
+                        data=pdf_bytes,
+                        file_name=pdf_file,
+                        mime="application/pdf"
+                    )
+                else:
+                    st.markdown(f"[📄 Скачать руководство с сайта производителя](https://www.masios.com/docs/{pdf_file})")
+            else:
+                st.caption("PDF-руководство не доступно")
         
         g_val = c_val = None
         if sensor_type in ["MAS‑VWS‑SM15 (поверхностный)", "MAS‑VWE (давление грунта)"]:
@@ -753,10 +816,9 @@ def main():
                     st.session_state.c_val = p['c_val']
                 st.rerun()
 
-    # --- Основной контент ---
+    # ---- Основные вкладки ----
     page = st.session_state.page
     
-    # ------------------- ГЛАВНАЯ -------------------
     if page == "Главная":
         st.markdown("## 🏠 Дашборд")
         st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
@@ -775,25 +837,24 @@ def main():
         else:
             st.info("Нет загруженных данных. Перейдите в раздел 'Загрузка' или 'Ручной ввод'.")
         
-        # Полезные ссылки
+        # Полезные ссылки (ОБНОВЛЕНО)
         st.markdown("### 🔗 Полезные ресурсы")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("""
             - [📖 Документация по тензодатчикам](https://example.com/docs)
             - [🎥 Видео-туториал](https://example.com/video)
+            - [📄 Статья о датчиках давления грунта и деформаций](https://geofundament.ru/datchiki-davlenija-grunta-mesdoza-i-datchiki-deformacij-tenzodatchiki/)
             """)
         with col2:
             st.markdown("""
             - [📄 Статья о мониторинге](https://example.com/article)
             - [💬 Чат поддержки](https://example.com/chat)
             """)
-
-    # ------------------- ЗАГРУЗКА -------------------
+    
     elif page == "Загрузка":
         st.markdown("## 📂 Загрузка файла (плоская таблица)")
         st.markdown("Файл должен содержать колонки: **нагрузка (load)**, **частота (freq)**, **температура (temp)**.")
-        
         uploaded = st.file_uploader("Выберите Excel-файл", type=["xlsx", "xls"], key="flat_upload")
         if uploaded:
             try:
@@ -839,8 +900,7 @@ def main():
             except Exception as e:
                 st.error(f"Ошибка: {e}")
                 logging.error(f"Ошибка в загрузке: {e}")
-
-    # ------------------- РУЧНОЙ ВВОД -------------------
+    
     elif page == "Ручной ввод":
         st.markdown("## ✏️ Ручной ввод данных")
         st.markdown("Вставьте данные в формате: **нагрузка, частота, температура**.")
@@ -905,8 +965,7 @@ def main():
                         st.error("Ошибка расчёта.")
                 else:
                     st.error(msg)
-
-    # ------------------- СВАЙНЫЕ ИСПЫТАНИЯ -------------------
+    
     elif page == "Свайные испытания":
         st.markdown("## 🧪 Свайные испытания")
         st.markdown("""
@@ -937,8 +996,7 @@ def main():
                 st.error(f"Ошибка при обработке: {e}")
                 logging.error(f"Ошибка парсинга: {e}")
                 send_telegram(f"Ошибка парсинга: {e}")
-
-    # ------------------- ПОДБОР ДАТЧИКОВ -------------------
+    
     elif page == "Подбор датчиков":
         st.markdown("## 📋 Подбор датчиков")
         st.markdown("Выберите параметры, и система предложит подходящие датчики.")
@@ -978,8 +1036,7 @@ def main():
                 st.info("Рекомендация: выберите датчик с максимальной совместимостью.")
             else:
                 st.warning("Не найдено подходящих датчиков. Попробуйте изменить параметры.")
-
-    # ------------------- КАЛИБРОВКА -------------------
+    
     elif page == "Калибровка":
         st.markdown("## 🎛️ Интерактивная калибровка")
         st.markdown("Изменяйте параметры ползунками и наблюдайте за изменением графика и статистики.")
@@ -1027,8 +1084,7 @@ def main():
                     st.success("Параметры обновлены!")
         else:
             st.info("Сначала загрузите или введите данные в одной из предыдущих вкладок.")
-
-    # ------------------- СРАВНЕНИЕ -------------------
+    
     elif page == "Сравнение":
         st.markdown("## 📊 Сравнение нескольких датчиков")
         st.markdown("Загрузите несколько файлов для сравнения на одном графике.")
@@ -1076,8 +1132,7 @@ def main():
                 st.warning("Не удалось обработать ни одного файла.")
         else:
             st.info("Загрузите файлы для сравнения.")
-
-    # ------------------- СПРАВКА -------------------
+    
     elif page == "Справка":
         st.markdown("## 📚 Справка и полезные ссылки")
         
@@ -1088,18 +1143,42 @@ def main():
         - [API Reference](https://example.com/api)
         """)
         
+        st.markdown("### 📄 Руководства по датчикам")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **MAS-VWS-SM25H (длинная база)**
+            - [Скачать PDF](https://www.masios.com/docs/MAS-VWS-SM25H.pdf)
+            - [Страница продукта](https://www.masios.com/product/sm25h)
+            
+            **MAS-VWS-SM15 (короткая база)**
+            - [Скачать PDF](https://www.masios.com/docs/MAS-VWS-SM15.pdf)
+            - [Страница продукта](https://www.masios.com/product/sm15)
+            """)
+        with col2:
+            st.markdown("""
+            **MAS-VWE (давление грунта)**
+            - [Скачать PDF](https://www.masios.com/docs/MAS-VWE.pdf)
+            - [Страница продукта](https://www.masios.com/product/vwe)
+            
+            **MAS-HVLog-sf (ручной считыватель)**
+            - [Скачать PDF](https://www.masios.com/docs/MAS-HVLog-sf.pdf)
+            - [Страница продукта](https://www.masios.com/product/hvlog)
+            """)
+        
+        st.markdown("### 📄 Статьи и публикации (ОБНОВЛЕНО)")
+        st.markdown("""
+        - [Мониторинг напряжений в грунтах](https://example.com/article1)
+        - [Выбор тензодатчиков](https://example.com/article2)
+        - [Обработка данных](https://example.com/article3)
+        - [Датчики давления грунта — месдоза, и датчики деформаций — тензодатчики](https://geofundament.ru/datchiki-davlenija-grunta-mesdoza-i-datchiki-deformacij-tenzodatchiki/)
+        """)
+        
         st.markdown("### 🎥 Видео-материалы")
         st.markdown("""
         - [Как пользоваться приложением](https://example.com/video-tutorial)
         - [Обработка свайных испытаний](https://example.com/pile-test)
         - [Калибровка датчиков](https://example.com/calibration)
-        """)
-        
-        st.markdown("### 📄 Статьи и публикации")
-        st.markdown("""
-        - [Мониторинг напряжений в грунтах](https://example.com/article1)
-        - [Выбор тензодатчиков](https://example.com/article2)
-        - [Обработка данных](https://example.com/article3)
         """)
         
         st.markdown("### 📞 Контакты")
