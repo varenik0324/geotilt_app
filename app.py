@@ -39,6 +39,20 @@ CONFIG = {
     "PILE_T_REF": 23.9,
 }
 
+# Информационные ссылки и ресурсы
+INFO_LINKS = {
+    "Сайт производителя": "https://example.com/sensors",
+    "Документация": "https://example.com/docs",
+    "Техническая поддержка": "mailto:support@example.com",
+    "Видео-инструкция": "https://youtu.be/example",
+    "Скачать пример данных": "https://example.com/sample_data.xlsx",
+    "Обратная связь": "https://example.com/feedback",
+    "GitHub проекта": "https://github.com/yourusername/geotilt_app",
+    "API документация": "https://example.com/api",
+    "Таблица калибровки": "https://example.com/calibration_table",
+    "Обучение работе с приложением": "https://example.com/training",
+}
+
 # ============================================================
 # 2. УТИЛИТЫ
 # ============================================================
@@ -61,7 +75,6 @@ def send_telegram(message: str) -> bool:
         return False
 
 def save_profile(profile: Dict):
-    """Сохраняет профиль настроек в JSON."""
     profiles = {}
     if os.path.exists(CONFIG["PROFILES_FILE"]):
         with open(CONFIG["PROFILES_FILE"], 'r', encoding='utf-8') as f:
@@ -77,7 +90,7 @@ def load_profiles() -> Dict:
     return {}
 
 # ============================================================
-# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные)
+# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные с информацией)
 # ============================================================
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -89,7 +102,10 @@ SENSOR_SPECS = {
         "temperature_range": "-20…+80 °C",
         "waterproof": "≥0.5 МПа",
         "application": "Мониторинг мостов, зданий, плотин, труб, свай.",
-        "installation": "Встраивается в бетон при заливке или крепится на арматуру."
+        "installation": "Встраивается в бетон при заливке или крепится на арматуру.",
+        "calibration_info": "Калибровка производится при температуре 20°С. Коэффициент K = 0.0031559.",
+        "advantages": "Высокая точность, стабильность показаний, длительный срок службы.",
+        "link": "https://example.com/sensors/em15h"
     },
     "MAS‑VWS‑SM15 (поверхностный)": {
         "type": "Виброструнный тензометр (короткая база)",
@@ -100,7 +116,10 @@ SENSOR_SPECS = {
         "temperature_range": "-20…+80 °C",
         "waterproof": "≥0.5 МПа",
         "application": "Мониторинг строительных конструкций, мостов, тоннелей, свай.",
-        "installation": "Приваривается на стальные конструкции или приклеивается на бетон (эпоксидным клеем)."
+        "installation": "Приваривается на стальные конструкции или приклеивается на бетон (эпоксидным клеем).",
+        "calibration_info": "Калибровочные коэффициенты G и C указываются в сертификате датчика.",
+        "advantages": "Удобство монтажа на поверхность, возможность быстрой замены.",
+        "link": "https://example.com/sensors/sm15"
     },
     "MAS‑VWS‑SM25H (поверхностный длинная база)": {
         "type": "Виброструнный тензометр (длинная база)",
@@ -111,7 +130,10 @@ SENSOR_SPECS = {
         "temperature_range": "-40…+90 °C",
         "waterproof": "≥0.5 МПа",
         "application": "Мониторинг больших конструкций (плотины, мосты, тоннели).",
-        "installation": "Приваривается на сталь или приклеивается на бетон, подходит для влажной среды."
+        "installation": "Приваривается на сталь или приклеивается на бетон, подходит для влажной среды.",
+        "calibration_info": "Калибровка при температуре 20°С. Коэффициент K = 0.0035708.",
+        "advantages": "Длинная база обеспечивает более высокую чувствительность.",
+        "link": "https://example.com/sensors/sm25h"
     },
     "MAS‑VWE (давление грунта)": {
         "type": "Виброструнный датчик давления грунта",
@@ -122,7 +144,10 @@ SENSOR_SPECS = {
         "temperature_range": "-40…+80 °C",
         "waterproof": "≥1.0 МПа",
         "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей.",
-        "installation": "Закапывается в грунт или устанавливается в насыпь, требуется защита кабеля."
+        "installation": "Закапывается в грунт или устанавливается в насыпь, требуется защита кабеля.",
+        "calibration_info": "Калибровочные коэффициенты G и C указываются в сертификате датчика.",
+        "advantages": "Специализирован для измерения давлений в грунте.",
+        "link": "https://example.com/sensors/vwe"
     }
 }
 
@@ -199,13 +224,13 @@ class DataProcessor:
             'Среднее напряжение, МПа': df['stress_MPa'].mean(),
             'Макс. напряжение, МПа': df['stress_MPa'].max(),
             'Мин. напряжение, МПа': df['stress_MPa'].min(),
-            'Std деформация, μϵ': df['strain'].std(),
+            'Стандартное отклонение, μϵ': df['strain'].std(),
             'Статистика': df['strain'].describe().to_dict()
         }
         return df, stats
 
 # ============================================================
-# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (PDF, WORD – РЕАЛИЗОВАНЫ)
+# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ
 # ============================================================
 class ReportGenerator:
     @staticmethod
@@ -219,6 +244,16 @@ class ReportGenerator:
             specs_text = get_sensor_specs(sensor_type)
             for i, line in enumerate(specs_text.split('\n')):
                 ws_spec.write(i, 0, line)
+            # Добавляем информационный лист
+            ws_info = writer.book.add_worksheet('Информация')
+            ws_info.write(0, 0, "Дата генерации")
+            ws_info.write(0, 1, datetime.now().strftime('%d.%m.%Y %H:%M'))
+            ws_info.write(1, 0, "Приложение")
+            ws_info.write(1, 1, "Анализ тензодатчиков v2.0")
+            ws_info.write(2, 0, "Полезные ссылки")
+            for i, (name, url) in enumerate(INFO_LINKS.items()):
+                ws_info.write(3+i, 0, name)
+                ws_info.write(3+i, 1, url)
         return output.getvalue()
 
     @staticmethod
@@ -243,11 +278,15 @@ class ReportGenerator:
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
         width, height = A4
+        
+        # Заголовок
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, height - 50, f"Отчёт по датчику: {sensor_name}")
         c.setFont("Helvetica", 12)
         c.drawString(50, height - 80, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
         c.drawString(50, height - 100, f"f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
+        
+        # Спецификация датчика
         specs_text = get_sensor_specs(sensor_type)
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, height - 130, "Спецификация датчика:")
@@ -259,10 +298,14 @@ class ReportGenerator:
                 y = height - 50
             c.drawString(55, y, line)
             y -= 14
+        
+        # График
         img_path = tempfile.mktemp(suffix=".png")
         img.save(img_path)
         c.drawImage(img_path, 50, height - 450, width=500, height=250)
         os.remove(img_path)
+        
+        # Статистика
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, height - 480, "Сводка:")
         c.setFont("Helvetica", 10)
@@ -274,6 +317,19 @@ class ReportGenerator:
                 if y < 50:
                     c.showPage()
                     y = height - 50
+        
+        # Информационные ссылки
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y - 20, "Полезные ссылки:")
+        c.setFont("Helvetica", 9)
+        y -= 35
+        for name, url in INFO_LINKS.items():
+            c.drawString(60, y, f"{name}: {url}")
+            y -= 15
+            if y < 50:
+                c.showPage()
+                y = height - 50
+        
         c.save()
         buffer.seek(0)
         return buffer
@@ -290,9 +346,11 @@ class ReportGenerator:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
         doc.add_paragraph(f"f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
+        
         doc.add_heading("Спецификация датчика", level=2)
         for line in get_sensor_specs(sensor_type).split('\n'):
             doc.add_paragraph(line)
+        
         doc.add_heading("Сводка", level=2)
         for key, val in stats.items():
             if key not in ['Статистика']:
@@ -330,6 +388,11 @@ class ReportGenerator:
             row_cells[2].text = f"{row['temp']:.1f}"
             row_cells[3].text = f"{row['strain']:.1f}"
             row_cells[4].text = f"{row['stress_MPa']:.3f}"
+        
+        doc.add_heading("Полезные ссылки", level=2)
+        for name, url in INFO_LINKS.items():
+            doc.add_paragraph(f"{name}: {url}")
+        
         doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -615,7 +678,6 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
     )
     st.plotly_chart(fig, use_container_width=True)
     
-    # Расширенная статистика
     with st.expander("📊 Расширенная статистика"):
         stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
         st.dataframe(stats_df)
@@ -656,6 +718,7 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
 def main():
     st.set_page_config(page_title="Анализ датчиков", layout="wide")
     st.title("📊 Обработка данных тензодатчиков")
+    st.markdown("---")
     
     # Инициализация состояния
     for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles']:
@@ -676,6 +739,8 @@ def main():
             st.markdown(f"**Тип:** {specs.get('type')}")
             st.markdown(f"**Диапазон:** {specs.get('measuring_range')}")
             st.markdown(f"**K:** {specs.get('k_factor')}")
+            if specs.get('link'):
+                st.markdown(f"[🔗 Подробнее]({specs['link']})")
         
         g_val = c_val = None
         if sensor_type in ["MAS‑VWS‑SM15 (поверхностный)", "MAS‑VWE (давление грунта)"]:
@@ -725,6 +790,11 @@ def main():
                 if 'c_val' in p:
                     st.session_state.c_val = p['c_val']
                 st.rerun()
+        
+        st.markdown("---")
+        st.subheader("🔗 Полезные ссылки")
+        for name, url in INFO_LINKS.items():
+            st.markdown(f"[{name}]({url})")
 
     # Вкладки
     tabs = st.tabs(["📂 Загрузка файла", "✏️ Ручной ввод", "🧪 Свайные испытания", 
@@ -897,7 +967,6 @@ def main():
             for sensor, specs in SENSOR_SPECS.items():
                 score = 0
                 reasons = []
-                # Проверка соответствия
                 if meas_param.lower() in specs.get('application', '').lower():
                     score += 2
                     reasons.append(f"✓ подходит для {meas_param}")
@@ -916,7 +985,17 @@ def main():
             if recommendations:
                 df_rec = pd.DataFrame(recommendations).sort_values('Совместимость', ascending=False)
                 st.dataframe(df_rec, use_container_width=True)
-                st.info("Рекомендация: выберите датчик с максимальной совместимостью.")
+                
+                # Показываем детальную информацию о выбранном датчике
+                st.subheader("📘 Детальная информация о рекомендуемых датчиках")
+                for rec in recommendations[:3]:
+                    with st.expander(f"📐 {rec['Датчик']} (совместимость: {rec['Совместимость']} баллов)"):
+                        specs = SENSOR_SPECS[rec['Датчик']]
+                        for key, val in specs.items():
+                            if key != 'link':
+                                st.write(f"**{key}:** {val}")
+                        if specs.get('link'):
+                            st.markdown(f"[🔗 Подробнее]({specs['link']})")
             else:
                 st.warning("Не найдено подходящих датчиков. Попробуйте изменить параметры.")
 
@@ -936,7 +1015,6 @@ def main():
                 g_cal = st.slider("G (если нужен)", min_value=0.5, max_value=2.0, value=g_val or 1.0, step=0.001)
                 c_cal = st.slider("C (если нужен)", min_value=0.5, max_value=2.0, value=c_val or 1.0, step=0.001)
             
-            # Пересчёт с новыми параметрами
             result_cal, stats_cal = DataProcessor.process_strain_data(
                 df_orig, f0_cal, t0_cal, sensor_type, g_cal, c_cal
             )
@@ -988,7 +1066,6 @@ def main():
                     if len(df_raw.columns) >= 3:
                         df_comp = df_raw.iloc[:, :3].copy()
                         df_comp.columns = ['load', 'freq', 'temp']
-                        # Очистка и расчёт
                         ok, _, df_clean = DataProcessor.validate_data(df_comp)
                         if ok:
                             result_comp, _ = DataProcessor.process_strain_data(
