@@ -75,27 +75,284 @@ def clean_numeric(val):
     return val
 
 # ------------------------------------------------------------
-# СПЕЦИФИКАЦИИ ДАТЧИКОВ
+# СПЕЦИФИКАЦИИ ДАТЧИКОВ (ПОЛНЫЙ СЛОВАРЬ)
 # ------------------------------------------------------------
-SENSOR_SPECS = {...}  # оставлен без изменений для краткости, но в реальном коде он должен быть полным
+SENSOR_SPECS = {
+    "MAS‑VWS‑EM15H (встроенный)": {
+        "name": "MAS‑VWS‑EM15H (встроенный)",
+        "type": "Виброструнный тензометр",
+        "measuring_range": "±1500 μϵ",
+        "accuracy": "0.5% F.S",
+        "resolution": "1.0 μϵ",
+        "temperature_range": "-20…+80 °C",
+        "temperature_accuracy": "±0.5 °C",
+        "waterproof": "≥0.5 МПа",
+        "gauge_length": "150 мм",
+        "k_factor": "0.0031559",
+        "thermal_expansion_steel": "12.2 μϵ/°C",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "description": "Виброструнный тензометр для измерения деформаций на поверхностях бетонных и стальных конструкций.",
+        "application": "Мониторинг мостов, зданий, плотин, труб, свай."
+    },
+    "MAS‑VWS‑SM15 (поверхностный)": {
+        "name": "MAS‑VWS‑SM15 (поверхностный)",
+        "type": "Виброструнный тензометр (короткая база)",
+        "measuring_range": "±1500 μϵ",
+        "accuracy": "0.5% F.S",
+        "resolution": "1.0 μϵ",
+        "temperature_range": "-20…+80 °C",
+        "temperature_accuracy": "±0.5 °C",
+        "waterproof": "≥0.5 МПа",
+        "gauge_length": "150 мм",
+        "k_factor": "G × C (задаётся пользователем)",
+        "thermal_expansion_steel": "12.2 μϵ/°C",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "description": "Виброструнный тензометр с длиной базы 150 мм для измерения деформаций на бетонных и стальных поверхностях.",
+        "application": "Мониторинг строительных конструкций, мостов, тоннелей, свай."
+    },
+    "MAS‑VWS‑SM25H (поверхностный длинная база)": {
+        "name": "MAS‑VWS‑SM25H (поверхностный длинная база)",
+        "type": "Виброструнный тензометр (длинная база)",
+        "measuring_range": "±2500 μϵ",
+        "accuracy": "0.5% F.S",
+        "resolution": "0.1 μϵ",
+        "temperature_range": "-40…+90 °C",
+        "temperature_accuracy": "±0.5 °C",
+        "waterproof": "≥0.5 МПа",
+        "gauge_length": "129 мм",
+        "k_factor": "0.0035708",
+        "thermal_expansion_steel": "12.2 μϵ/°C",
+        "thermal_expansion_concrete": "10.0 μϵ/°C",
+        "description": "Виброструнный тензометр с длинной базой 129 мм для измерения деформаций на поверхностях бетонных и стальных конструкций.",
+        "application": "Мониторинг больших конструкций (плотины, мосты, тоннели)."
+    },
+    "MAS‑VWE (давление грунта)": {
+        "name": "MAS‑VWE (давление грунта)",
+        "type": "Виброструнный датчик давления грунта",
+        "measuring_range": "0…350/700/1000/2000/3000 кПа",
+        "accuracy": "0.5% F.S",
+        "resolution": "0.01 кПа (по частоте)",
+        "temperature_range": "-40…+80 °C",
+        "temperature_accuracy": "±0.5 °C (@ -10…70 °C)",
+        "waterproof": "≥1.0 МПа",
+        "k_factor": "G × C (задаётся пользователем)",
+        "thermal_expansion_steel": "12.2 μϵ/°C (для стали)",
+        "thermal_expansion_concrete": "10.0 μϵ/°C (для бетона)",
+        "description": "Виброструнный датчик давления грунта для измерения напряжений в массиве грунта, насыпях, основаниях фундаментов.",
+        "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей."
+    }
+}
 
 def get_sensor_specs(sensor_type: str) -> str:
-    # ... (без изменений)
-    return ""
+    specs = SENSOR_SPECS.get(sensor_type)
+    if not specs:
+        return "Характеристики не найдены."
+    return "\n".join([f"{k}: {v}" for k, v in specs.items()])
 
 # ------------------------------------------------------------
 # ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (плоские таблицы)
 # ------------------------------------------------------------
 class DataProcessor:
-    # ... (без изменений)
-    pass
+    @staticmethod
+    def clean_and_convert(df: pd.DataFrame, col: str) -> pd.Series:
+        if col not in df.columns:
+            return pd.Series(index=df.index, dtype=float)
+        series = df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip()
+        series = series.replace('', np.nan)
+        return pd.to_numeric(series, errors='coerce')
+
+    @staticmethod
+    def validate_data(df: pd.DataFrame) -> Tuple[bool, str, pd.DataFrame]:
+        required = ['load', 'freq', 'temp']
+        if df.empty:
+            return False, "DataFrame пуст.", df
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            return False, f"Отсутствуют столбцы: {', '.join(missing)}", df
+        df_clean = df.copy()
+        errors = []
+        for col in required:
+            converted = DataProcessor.clean_and_convert(df_clean, col)
+            invalid_mask = converted.isna()
+            if invalid_mask.any():
+                invalid_rows = df_clean.index[invalid_mask].tolist()
+                errors.append(f"В столбце '{col}' проблемы в строках: {invalid_rows[:10]}{'...' if len(invalid_rows)>10 else ''}")
+            df_clean[col] = converted
+        df_clean = df_clean.dropna(subset=required, how='all')
+        for col in required:
+            if df_clean[col].isna().sum() > 0:
+                df_clean[col] = df_clean[col].interpolate(method='linear', limit=5)
+        df_clean = df_clean.dropna(subset=required)
+        if df_clean.empty:
+            return False, "После очистки не осталось числовых строк. Проверьте данные.", df_clean
+        if errors:
+            msg = "Обнаружены проблемы с данными:\n" + "\n".join(errors) + "\nПроблемные строки были удалены."
+            return True, msg, df_clean
+        else:
+            return True, "Данные успешно проверены.", df_clean
+
+    @staticmethod
+    def process_strain_data(df: pd.DataFrame, f0: float, t0: float,
+                            sensor_type: str, g_val: Optional[float] = None,
+                            c_val: Optional[float] = None) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
+        if df.empty:
+            return None, None
+        if sensor_type == 'MAS‑VWS‑EM15H (встроенный)':
+            K = CONFIG["DEFAULT_K_EM15H"]
+        elif sensor_type == 'MAS‑VWS‑SM25H (поверхностный длинная база)':
+            K = CONFIG["DEFAULT_K_SM25H"]
+        elif sensor_type in ['MAS‑VWS‑SM15 (поверхностный)', 'MAS‑VWE (давление грунта)']:
+            if g_val is None or c_val is None:
+                return None, None
+            K = g_val * c_val
+        else:
+            return None, None
+        df = df.copy()
+        df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
+        df['stress_MPa'] = CONFIG["E_MODULUS"] * df['strain'] / 1_000_000 * 0.00689476
+        stats = {
+            'Количество точек': len(df),
+            'Средняя деформация, μϵ': df['strain'].mean(),
+            'Макс. деформация, μϵ': df['strain'].max(),
+            'Мин. деформация, μϵ': df['strain'].min(),
+            'Среднее напряжение, МПа': df['stress_MPa'].mean(),
+            'Макс. напряжение, МПа': df['stress_MPa'].max(),
+            'Мин. напряжение, МПа': df['stress_MPa'].min(),
+        }
+        return df, stats
 
 # ------------------------------------------------------------
-# ГЕНЕРАЦИЯ ОТЧЁТОВ
+# ГЕНЕРАЦИЯ ОТЧЁТОВ (PDF, WORD – рабочие функции)
 # ------------------------------------------------------------
 class ReportGenerator:
-    # ... (без изменений)
-    pass
+    @staticmethod
+    def to_excel(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str) -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Результат')
+            stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
+            stats_df.to_excel(writer, sheet_name='Сводка')
+            ws_spec = writer.book.add_worksheet('Спецификация датчика')
+            specs_text = get_sensor_specs(sensor_type)
+            for i, line in enumerate(specs_text.split('\n')):
+                ws_spec.write(i, 0, line)
+        return output.getvalue()
+
+    @staticmethod
+    def to_pdf(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str,
+               f0: float, t0: float) -> io.BytesIO:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        from PIL import Image
+        import tempfile
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
+        ax.set_xlabel("Нагрузка, тс")
+        ax.set_ylabel("Деформация, μϵ")
+        ax.set_title("Деформация от нагрузки")
+        ax.grid(True)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=100)
+        buf.seek(0)
+        img = Image.open(buf)
+        plt.close(fig)
+
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, height - 50, f"Отчёт по датчику: {sensor_name}")
+        c.setFont("Helvetica", 12)
+        c.drawString(50, height - 80, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+        c.drawString(50, height - 100, f"f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
+        specs_text = get_sensor_specs(sensor_type)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 130, "Спецификация датчика:")
+        c.setFont("Helvetica", 9)
+        y = height - 150
+        for line in specs_text.split('\n'):
+            if y < 50:
+                c.showPage()
+                y = height - 50
+            c.drawString(55, y, line)
+            y -= 14
+        img_path = tempfile.mktemp(suffix=".png")
+        img.save(img_path)
+        c.drawImage(img_path, 50, height - 450, width=500, height=250)
+        os.remove(img_path)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 480, "Сводка:")
+        c.setFont("Helvetica", 10)
+        y = height - 500
+        for key, val in stats.items():
+            c.drawString(60, y, f"{key}: {val:.3f}" if isinstance(val, float) else f"{key}: {val}")
+            y -= 15
+            if y < 50:
+                c.showPage()
+                y = height - 50
+        c.save()
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    def to_word(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str,
+                f0: float, t0: float) -> io.BytesIO:
+        from docx import Document
+        from docx.shared import Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import tempfile
+        import matplotlib.pyplot as plt
+        from PIL import Image
+
+        doc = Document()
+        title = doc.add_heading(f"Отчёт по датчику: {sensor_name}", level=1)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph(f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+        doc.add_paragraph(f"f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
+        doc.add_heading("Спецификация датчика", level=2)
+        for line in get_sensor_specs(sensor_type).split('\n'):
+            doc.add_paragraph(line)
+        doc.add_heading("Сводка", level=2)
+        for key, val in stats.items():
+            doc.add_paragraph(f"{key}: {val:.3f}" if isinstance(val, float) else f"{key}: {val}")
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
+        ax.set_xlabel("Нагрузка, тс")
+        ax.set_ylabel("Деформация, μϵ")
+        ax.set_title("Деформация от нагрузки")
+        ax.grid(True)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=100)
+        buf.seek(0)
+        plt.close(fig)
+        img = Image.open(buf)
+        img_path = tempfile.mktemp(suffix=".png")
+        img.save(img_path)
+        doc.add_picture(img_path, width=Inches(6))
+        os.remove(img_path)
+        doc.add_heading("Таблица результатов (первые 20 строк)", level=2)
+        table = doc.add_table(rows=1, cols=5)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = "Нагрузка, тс"
+        hdr_cells[1].text = "Частота, Гц"
+        hdr_cells[2].text = "Температура, °C"
+        hdr_cells[3].text = "Деформация, μϵ"
+        hdr_cells[4].text = "Напряжение, МПа"
+        for _, row in df.head(20).iterrows():
+            row_cells = table.add_row().cells
+            row_cells[0].text = f"{row['load']:.1f}"
+            row_cells[1].text = f"{row['freq']:.1f}"
+            row_cells[2].text = f"{row['temp']:.1f}"
+            row_cells[3].text = f"{row['strain']:.1f}"
+            row_cells[4].text = f"{row['stress_MPa']:.3f}"
+        doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer
 
 # ------------------------------------------------------------
 # ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (ГИБКАЯ ВЕРСИЯ)
@@ -179,10 +436,6 @@ class PileParser:
 
     @staticmethod
     def _find_header_blocks(df_test_raw: pd.DataFrame) -> List[Dict]:
-        """
-        Находит все строки-заголовки блоков (содержат одновременно "Время", "Нагрузка", "Давление").
-        Возвращает список словарей с номерами строк начала и конца каждого блока.
-        """
         header_rows = []
         for idx, row in df_test_raw.iterrows():
             row_text = ' '.join([str(c) for c in row if pd.notna(c)])
@@ -194,7 +447,6 @@ class PileParser:
 
         blocks = []
         for i, h_row in enumerate(header_rows):
-            # Определяем имя сваи (строка над заголовком, содержащая "Свая")
             pile_name = None
             for offset in range(1, 5):
                 if h_row - offset >= 0:
@@ -215,11 +467,9 @@ class PileParser:
     @staticmethod
     def _extract_block_data(df_test_raw: pd.DataFrame, start_header: int, end_row: int,
                             zero_data: Dict) -> Dict[str, pd.DataFrame]:
-        # Извлекаем заголовки
         headers = df_test_raw.iloc[start_header].tolist()
         headers = [str(h).strip() if pd.notna(h) else '' for h in headers]
 
-        # Определяем ступени
         step_columns = {}
         current_step = None
         step_pattern = re.compile(r'Ступень\s*(\d+)', re.IGNORECASE)
@@ -254,7 +504,6 @@ class PileParser:
                 elif 'Температура' in h or 'температура' in h:
                     step_columns[1]['Температура'] = i
 
-        # Ищем строки с датчиками
         sensor_rows = []
         exclude_phrases = ['Верх сваи', 'Низ сваи', 'Под пятой', 'уровень']
         sensor_pattern = re.compile(r'(\d+)[-–]?\s*й?\s*(верх|сред|низ)', re.IGNORECASE)
@@ -268,7 +517,6 @@ class PileParser:
             if sensor_pattern.search(first_cell) or any(kw in first_cell.lower() for kw in ['верх', 'сред', 'низ']):
                 sensor_rows.append(idx)
 
-        # Собираем данные
         block_results = {}
         for idx in sensor_rows:
             row = df_test_raw.iloc[idx]
@@ -294,7 +542,6 @@ class PileParser:
 
             if sensor_data:
                 df_sensor = pd.DataFrame(sensor_data)
-                # Если есть нулевые данные для этого датчика, рассчитываем давление
                 if sensor_name in zero_data:
                     f0 = zero_data[sensor_name]['f0']
                     T0 = zero_data[sensor_name]['T0']
@@ -340,7 +587,6 @@ class PileParser:
         df_test_raw = pd.read_excel(file_bytes, sheet_name=test_sheet, header=None)
         df_test_raw.columns = range(df_test_raw.shape[1])
 
-        # Находим блоки
         blocks = PileParser._find_header_blocks(df_test_raw)
         if not blocks:
             info['debug'].append("Не найдены блоки с заголовками (нет строк с Время, Нагрузка, Давление).")
@@ -348,7 +594,6 @@ class PileParser:
 
         info['debug'].append(f"Найдено блоков: {len(blocks)}")
 
-        # Парсим нулевые данные
         zero_data = {}
         for sheet in zero_sheets:
             df_zero_raw = pd.read_excel(file_bytes, sheet_name=sheet, header=None)
@@ -357,7 +602,6 @@ class PileParser:
 
         info['debug'].append(f"Нулевых значений получено: {len(zero_data)}")
 
-        # Обрабатываем каждый блок
         all_results = {}
         for block in blocks:
             block_results = PileParser._extract_block_data(
@@ -456,7 +700,58 @@ def main():
             index=0,
             key="sensor_type"
         )
-        # ... (остальное без изменений)
+        st.markdown("---")
+        st.markdown("**📋 Спецификация датчика**")
+        specs = SENSOR_SPECS.get(sensor_type)
+        if specs:
+            st.markdown(f"**Тип:** {specs.get('type', 'не указан')}")
+            st.markdown(f"**Диапазон:** {specs.get('measuring_range', 'не указан')}")
+            st.markdown(f"**Точность:** {specs.get('accuracy', 'не указана')}")
+            st.markdown(f"**Коэф. K:** {specs.get('k_factor', 'не указан')}")
+            st.caption("Подробные характеристики будут включены в отчёт.")
+        else:
+            st.warning("Характеристики не найдены")
+
+        g_val = None
+        c_val = None
+        if sensor_type in ["MAS‑VWS‑SM15 (поверхностный)", "MAS‑VWE (давление грунта)"]:
+            st.subheader("Калибровочные коэффициенты")
+            g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
+            c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
+            st.caption("Из сертификата датчика.")
+
+        f0 = st.number_input("f₀ (Гц)", value=1000.0, step=0.1, format="%.1f", key="f0")
+        t0 = st.number_input("T₀ (°C)", value=20.0, step=0.1, format="%.1f", key="t0")
+
+        st.markdown("---")
+        st.subheader("🎨 Оформление")
+        theme = st.selectbox(
+            "Тема графиков",
+            ["Светлая", "Тёмная", "Корпоративная (синяя)"],
+            index=0,
+            key="theme"
+        )
+        if theme == "Светлая":
+            st.session_state.template = "plotly_white"
+        elif theme == "Тёмная":
+            st.session_state.template = "plotly_dark"
+        else:
+            st.session_state.template = "seaborn"
+
+        if st.button("Сохранить настройки"):
+            st.success("Настройки сохранены!")
+
+        logo_path = get_resource_path("logo.png")
+        if os.path.exists(logo_path):
+            try:
+                st.image(logo_path, width=150)
+            except:
+                st.warning("Не удалось загрузить логотип")
+        else:
+            st.warning("Логотип не найден (файл logo.png)")
+
+        st.markdown("### 🏗️ Геофундамент")
+        st.caption("© 2026, все права защищены")
 
     # Вкладки
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -468,14 +763,106 @@ def main():
         "📊 Сравнение датчиков"
     ])
 
-    # Вкладка 1 и 2 без изменений...
+    # ---------- Вкладка 1: Загрузка файла (плоская таблица) ----------
     with tab1:
-        st.subheader("Загрузка файла с данными (плоская таблица)")
-        # ... (как было)
+        st.subheader("Загрузите файл с данными (плоская таблица)")
+        st.markdown("Файл должен содержать колонки: нагрузка (load), частота (freq), температура (temp).")
+        uploaded_file = st.file_uploader("Выберите Excel-файл", type=["xlsx", "xls"], key="file_uploader_flat")
+        if uploaded_file:
+            try:
+                df_raw = pd.read_excel(uploaded_file)
+                if len(df_raw.columns) >= 3:
+                    df_mapped = df_raw.iloc[:, :3].copy()
+                    df_mapped.columns = ['load', 'freq', 'temp']
+                    valid, msg, df_clean = DataProcessor.validate_data(df_mapped)
+                    if valid:
+                        st.success(msg)
+                        result, stats = DataProcessor.process_strain_data(df_clean, f0, t0, sensor_type, g_val, c_val)
+                        if result is not None:
+                            st.session_state.result = result
+                            st.session_state.stats = stats
+                            st.session_state.sensor_name = uploaded_file.name
+                            st.dataframe(result)
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
+                            fig.update_layout(template=st.session_state.template)
+                            st.plotly_chart(fig, use_container_width=True)
 
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                excel_data = ReportGenerator.to_excel(result, stats, uploaded_file.name, sensor_type)
+                                st.download_button(
+                                    label="📊 Excel",
+                                    data=excel_data,
+                                    file_name=f"result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                            with col2:
+                                pdf_data = ReportGenerator.to_pdf(result, stats, uploaded_file.name, sensor_type, f0, t0)
+                                st.download_button(
+                                    label="📄 PDF",
+                                    data=pdf_data.getvalue(),
+                                    file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                    mime="application/pdf"
+                                )
+                            with col3:
+                                word_data = ReportGenerator.to_word(result, stats, uploaded_file.name, sensor_type, f0, t0)
+                                st.download_button(
+                                    label="📝 Word",
+                                    data=word_data.getvalue(),
+                                    file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                )
+                        else:
+                            st.error("Ошибка расчёта.")
+                    else:
+                        st.error(msg)
+                else:
+                    st.warning("Файл должен содержать минимум 3 колонки.")
+            except Exception as e:
+                st.error(f"Ошибка: {e}")
+                logging.error(f"Ошибка в загрузке: {e}")
+
+    # ---------- Вкладка 2: Ручной ввод ----------
     with tab2:
-        st.subheader("Ручной ввод")
-        # ... (как было)
+        st.subheader("Вставьте данные из буфера обмена")
+        st.markdown("Вставьте данные в формате: нагрузка, частота, температура (разделитель – пробел, запятая или табуляция).")
+        text_data = st.text_area("Введите данные", height=200)
+        if st.button("Обработать"):
+            if not text_data.strip():
+                st.warning("Введите данные.")
+            else:
+                try:
+                    lines = text_data.strip().splitlines()
+                    rows = []
+                    for line in lines:
+                        if line.strip():
+                            parts = re.split(r'[,\t; ]+', line.strip())
+                            if len(parts) >= 3:
+                                rows.append(parts[:3])
+                    if not rows:
+                        st.error("Не удалось распознать данные.")
+                    else:
+                        df_manual = pd.DataFrame(rows, columns=['load', 'freq', 'temp'])
+                        valid, msg, df_clean = DataProcessor.validate_data(df_manual)
+                        if valid:
+                            st.success(msg)
+                            result, stats = DataProcessor.process_strain_data(df_clean, f0, t0, sensor_type, g_val, c_val)
+                            if result is not None:
+                                st.session_state.result = result
+                                st.session_state.stats = stats
+                                st.session_state.sensor_name = "Ручной ввод"
+                                st.dataframe(result)
+                                fig = go.Figure()
+                                fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
+                                fig.update_layout(template=st.session_state.template)
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.error("Ошибка расчёта.")
+                        else:
+                            st.error(msg)
+                except Exception as e:
+                    st.error(f"Ошибка: {e}")
 
     # ---------- Вкладка 3: Свайные испытания ----------
     with tab3:
@@ -489,7 +876,7 @@ def main():
 
         if uploaded_pile is not None:
             file_bytes = uploaded_pile.read()
-            # Показываем превью первых 30 строк для ручной настройки
+            # Превью первых 30 строк для ручной настройки
             df_preview = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, header=None, nrows=30)
             st.subheader("Превью файла (первые 30 строк)")
             st.dataframe(df_preview)
@@ -515,7 +902,18 @@ def main():
                 logging.error(f"Ошибка в свайном парсере: {e}")
                 send_telegram(f"Ошибка в свайном парсере: {e}")
 
-    # Вкладки 4-6 без изменений...
+    # ---------- Вкладки 4-6 (заглушки для будущего расширения) ----------
+    with tab4:
+        st.subheader("📋 Подбор датчиков")
+        st.info("Функция подбора датчиков будет добавлена в следующей версии.")
+
+    with tab5:
+        st.subheader("🎛️ Интерактивная калибровка")
+        st.info("Интерактивная калибровка будет добавлена в следующей версии.")
+
+    with tab6:
+        st.subheader("📊 Сравнение датчиков")
+        st.info("Сравнение датчиков будет добавлено в следующей версии.")
 
 if __name__ == "__main__":
     main()
