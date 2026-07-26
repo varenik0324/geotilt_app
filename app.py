@@ -14,9 +14,6 @@ import json
 import tempfile
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any, List
-from functools import lru_cache
-import matplotlib.pyplot as plt
-from PIL import Image
 
 # ============================================================
 # 1. КОНФИГУРАЦИЯ
@@ -37,20 +34,6 @@ CONFIG = {
     "PILE_C": 248.4372,
     "PILE_K": -0.036375,
     "PILE_T_REF": 23.9,
-}
-
-# Информационные ссылки и ресурсы
-INFO_LINKS = {
-    "Сайт производителя": "https://example.com/sensors",
-    "Документация": "https://example.com/docs",
-    "Техническая поддержка": "mailto:support@example.com",
-    "Видео-инструкция": "https://youtu.be/example",
-    "Скачать пример данных": "https://example.com/sample_data.xlsx",
-    "Обратная связь": "https://example.com/feedback",
-    "GitHub проекта": "https://github.com/yourusername/geotilt_app",
-    "API документация": "https://example.com/api",
-    "Таблица калибровки": "https://example.com/calibration_table",
-    "Обучение работе с приложением": "https://example.com/training",
 }
 
 # ============================================================
@@ -90,7 +73,7 @@ def load_profiles() -> Dict:
     return {}
 
 # ============================================================
-# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные с информацией)
+# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные)
 # ============================================================
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -103,9 +86,7 @@ SENSOR_SPECS = {
         "waterproof": "≥0.5 МПа",
         "application": "Мониторинг мостов, зданий, плотин, труб, свай.",
         "installation": "Встраивается в бетон при заливке или крепится на арматуру.",
-        "calibration_info": "Калибровка производится при температуре 20°С. Коэффициент K = 0.0031559.",
-        "advantages": "Высокая точность, стабильность показаний, длительный срок службы.",
-        "link": "https://example.com/sensors/em15h"
+        "link": "https://example.com/em15h"
     },
     "MAS‑VWS‑SM15 (поверхностный)": {
         "type": "Виброструнный тензометр (короткая база)",
@@ -116,10 +97,8 @@ SENSOR_SPECS = {
         "temperature_range": "-20…+80 °C",
         "waterproof": "≥0.5 МПа",
         "application": "Мониторинг строительных конструкций, мостов, тоннелей, свай.",
-        "installation": "Приваривается на стальные конструкции или приклеивается на бетон (эпоксидным клеем).",
-        "calibration_info": "Калибровочные коэффициенты G и C указываются в сертификате датчика.",
-        "advantages": "Удобство монтажа на поверхность, возможность быстрой замены.",
-        "link": "https://example.com/sensors/sm15"
+        "installation": "Приваривается на стальные конструкции или приклеивается на бетон.",
+        "link": "https://example.com/sm15"
     },
     "MAS‑VWS‑SM25H (поверхностный длинная база)": {
         "type": "Виброструнный тензометр (длинная база)",
@@ -131,9 +110,7 @@ SENSOR_SPECS = {
         "waterproof": "≥0.5 МПа",
         "application": "Мониторинг больших конструкций (плотины, мосты, тоннели).",
         "installation": "Приваривается на сталь или приклеивается на бетон, подходит для влажной среды.",
-        "calibration_info": "Калибровка при температуре 20°С. Коэффициент K = 0.0035708.",
-        "advantages": "Длинная база обеспечивает более высокую чувствительность.",
-        "link": "https://example.com/sensors/sm25h"
+        "link": "https://example.com/sm25h"
     },
     "MAS‑VWE (давление грунта)": {
         "type": "Виброструнный датчик давления грунта",
@@ -145,15 +122,13 @@ SENSOR_SPECS = {
         "waterproof": "≥1.0 МПа",
         "application": "Мониторинг земляных плотин, откосов, дорожных насыпей, подпорных стен, тоннелей.",
         "installation": "Закапывается в грунт или устанавливается в насыпь, требуется защита кабеля.",
-        "calibration_info": "Калибровочные коэффициенты G и C указываются в сертификате датчика.",
-        "advantages": "Специализирован для измерения давлений в грунте.",
-        "link": "https://example.com/sensors/vwe"
+        "link": "https://example.com/vwe"
     }
 }
 
 def get_sensor_specs(sensor_type: str) -> str:
     specs = SENSOR_SPECS.get(sensor_type, {})
-    return "\n".join([f"{k}: {v}" for k, v in specs.items()]) if specs else "Характеристики не найдены."
+    return "\n".join([f"{k}: {v}" for k, v in specs.items() if k != 'link']) if specs else "Характеристики не найдены."
 
 # ============================================================
 # 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
@@ -224,7 +199,7 @@ class DataProcessor:
             'Среднее напряжение, МПа': df['stress_MPa'].mean(),
             'Макс. напряжение, МПа': df['stress_MPa'].max(),
             'Мин. напряжение, МПа': df['stress_MPa'].min(),
-            'Стандартное отклонение, μϵ': df['strain'].std(),
+            'Std деформация, μϵ': df['strain'].std(),
             'Статистика': df['strain'].describe().to_dict()
         }
         return df, stats
@@ -244,16 +219,6 @@ class ReportGenerator:
             specs_text = get_sensor_specs(sensor_type)
             for i, line in enumerate(specs_text.split('\n')):
                 ws_spec.write(i, 0, line)
-            # Добавляем информационный лист
-            ws_info = writer.book.add_worksheet('Информация')
-            ws_info.write(0, 0, "Дата генерации")
-            ws_info.write(0, 1, datetime.now().strftime('%d.%m.%Y %H:%M'))
-            ws_info.write(1, 0, "Приложение")
-            ws_info.write(1, 1, "Анализ тензодатчиков v2.0")
-            ws_info.write(2, 0, "Полезные ссылки")
-            for i, (name, url) in enumerate(INFO_LINKS.items()):
-                ws_info.write(3+i, 0, name)
-                ws_info.write(3+i, 1, url)
         return output.getvalue()
 
     @staticmethod
@@ -262,6 +227,8 @@ class ReportGenerator:
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.utils import ImageReader
+        import matplotlib.pyplot as plt
+        from PIL import Image
 
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
@@ -278,15 +245,11 @@ class ReportGenerator:
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
         width, height = A4
-        
-        # Заголовок
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, height - 50, f"Отчёт по датчику: {sensor_name}")
         c.setFont("Helvetica", 12)
         c.drawString(50, height - 80, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
         c.drawString(50, height - 100, f"f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
-        
-        # Спецификация датчика
         specs_text = get_sensor_specs(sensor_type)
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, height - 130, "Спецификация датчика:")
@@ -298,14 +261,10 @@ class ReportGenerator:
                 y = height - 50
             c.drawString(55, y, line)
             y -= 14
-        
-        # График
         img_path = tempfile.mktemp(suffix=".png")
         img.save(img_path)
         c.drawImage(img_path, 50, height - 450, width=500, height=250)
         os.remove(img_path)
-        
-        # Статистика
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, height - 480, "Сводка:")
         c.setFont("Helvetica", 10)
@@ -317,19 +276,6 @@ class ReportGenerator:
                 if y < 50:
                     c.showPage()
                     y = height - 50
-        
-        # Информационные ссылки
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y - 20, "Полезные ссылки:")
-        c.setFont("Helvetica", 9)
-        y -= 35
-        for name, url in INFO_LINKS.items():
-            c.drawString(60, y, f"{name}: {url}")
-            y -= 15
-            if y < 50:
-                c.showPage()
-                y = height - 50
-        
         c.save()
         buffer.seek(0)
         return buffer
@@ -340,17 +286,17 @@ class ReportGenerator:
         from docx import Document
         from docx.shared import Inches
         from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import matplotlib.pyplot as plt
+        from PIL import Image
 
         doc = Document()
         title = doc.add_heading(f"Отчёт по датчику: {sensor_name}", level=1)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
         doc.add_paragraph(f"f₀ = {f0:.1f} Гц, T₀ = {t0:.1f} °C")
-        
         doc.add_heading("Спецификация датчика", level=2)
         for line in get_sensor_specs(sensor_type).split('\n'):
             doc.add_paragraph(line)
-        
         doc.add_heading("Сводка", level=2)
         for key, val in stats.items():
             if key not in ['Статистика']:
@@ -388,11 +334,6 @@ class ReportGenerator:
             row_cells[2].text = f"{row['temp']:.1f}"
             row_cells[3].text = f"{row['strain']:.1f}"
             row_cells[4].text = f"{row['stress_MPa']:.3f}"
-        
-        doc.add_heading("Полезные ссылки", level=2)
-        for name, url in INFO_LINKS.items():
-            doc.add_paragraph(f"{name}: {url}")
-        
         doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -713,57 +654,78 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         )
 
 # ============================================================
-# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ
+# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (НОВЫЙ ИНТЕРФЕЙС)
 # ============================================================
 def main():
-    st.set_page_config(page_title="Анализ датчиков", layout="wide")
-    st.title("📊 Обработка данных тензодатчиков")
-    st.markdown("---")
+    # --- Настройка страницы ---
+    st.set_page_config(
+        page_title="Анализ датчиков | Геофундамент",
+        page_icon="📐",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    # Инициализация состояния
-    for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles']:
+    # --- Инициализация состояния ---
+    for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles', 'page']:
         if key not in st.session_state:
             if key == 'template':
                 st.session_state[key] = 'plotly_white'
             elif key in ['f0', 't0']:
                 st.session_state[key] = 1000.0 if key == 'f0' else 20.0
+            elif key == 'page':
+                st.session_state[key] = 'Главная'
             else:
                 st.session_state[key] = None if key not in ['profiles'] else {}
 
-    # Боковая панель
+    # --- Шапка ---
+    col1, col2, col3 = st.columns([1, 3, 1])
+    with col1:
+        st.image("https://via.placeholder.com/80x40?text=GF", width=80)  # placeholder для лого
+    with col2:
+        st.title("📊 Анализ данных тензодатчиков")
+    with col3:
+        theme_toggle = st.toggle("🌙 Тёмная тема", value=st.session_state.template == 'plotly_dark')
+        st.session_state.template = 'plotly_dark' if theme_toggle else 'plotly_white'
+
+    # --- Боковая панель с навигацией ---
     with st.sidebar:
-        st.header("Настройки датчика")
+        st.markdown("### 🧭 Навигация")
+        pages = {
+            "🏠 Главная": "Главная",
+            "📂 Загрузка": "Загрузка",
+            "✏️ Ручной ввод": "Ручной ввод",
+            "🧪 Свайные испытания": "Свайные испытания",
+            "📋 Подбор датчиков": "Подбор датчиков",
+            "📈 Калибровка": "Калибровка",
+            "📊 Сравнение": "Сравнение",
+            "📚 Справка": "Справка"
+        }
+        selected_page = st.radio("", list(pages.keys()), index=list(pages.values()).index(st.session_state.page))
+        st.session_state.page = pages[selected_page]
+        
+        st.markdown("---")
+        st.markdown("### ⚙️ Параметры датчика")
         sensor_type = st.selectbox("Тип датчика", list(SENSOR_SPECS.keys()), key="sensor_type")
         specs = SENSOR_SPECS.get(sensor_type)
         if specs:
-            st.markdown(f"**Тип:** {specs.get('type')}")
-            st.markdown(f"**Диапазон:** {specs.get('measuring_range')}")
-            st.markdown(f"**K:** {specs.get('k_factor')}")
+            st.caption(f"**K:** {specs.get('k_factor')}")
+            st.caption(f"**Диапазон:** {specs.get('measuring_range')}")
             if specs.get('link'):
-                st.markdown(f"[🔗 Подробнее]({specs['link']})")
+                st.markdown(f"[📄 Подробнее]({specs['link']})")
         
         g_val = c_val = None
         if sensor_type in ["MAS‑VWS‑SM15 (поверхностный)", "MAS‑VWE (давление грунта)"]:
-            st.subheader("Калибровочные коэффициенты")
             g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
             c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
-            st.caption("Из сертификата датчика.")
         
-        st.subheader("Нулевые значения")
         f0 = st.number_input("f₀ (Гц)", value=st.session_state.f0, step=0.1, key="f0_input")
         t0 = st.number_input("T₀ (°C)", value=st.session_state.t0, step=0.1, key="t0_input")
         st.session_state.f0 = f0
         st.session_state.t0 = t0
         
         st.markdown("---")
-        st.subheader("🎨 Оформление")
-        theme = st.selectbox("Тема", ["Светлая", "Тёмная", "Корпоративная"], key="theme")
-        st.session_state.template = {"Светлая": "plotly_white", "Тёмная": "plotly_dark", "Корпоративная": "seaborn"}[theme]
-        
-        st.markdown("---")
-        st.subheader("💾 Профили")
-        profile_name = st.text_input("Имя профиля", value="default")
-        if st.button("💾 Сохранить профиль"):
+        profile_name = st.text_input("💾 Сохранить профиль", value="default")
+        if st.button("💾 Сохранить"):
             profile = {
                 'name': profile_name,
                 'sensor_type': sensor_type,
@@ -771,15 +733,15 @@ def main():
                 't0': t0,
                 'g_val': g_val,
                 'c_val': c_val,
-                'theme': theme
+                'theme': 'Тёмная' if theme_toggle else 'Светлая'
             }
             save_profile(profile)
-            st.success(f"Профиль '{profile_name}' сохранён!")
+            st.success("Профиль сохранён!")
         
         profiles = load_profiles()
         if profiles:
             profile_names = list(profiles.keys())
-            selected_profile = st.selectbox("Загрузить профиль", [""] + profile_names)
+            selected_profile = st.selectbox("📂 Загрузить профиль", [""] + profile_names)
             if selected_profile and st.button("📂 Загрузить"):
                 p = profiles[selected_profile]
                 st.session_state.sensor_type = p.get('sensor_type', 'MAS‑VWS‑EM15H (встроенный)')
@@ -790,20 +752,48 @@ def main():
                 if 'c_val' in p:
                     st.session_state.c_val = p['c_val']
                 st.rerun()
+
+    # --- Основной контент ---
+    page = st.session_state.page
+    
+    # ------------------- ГЛАВНАЯ -------------------
+    if page == "Главная":
+        st.markdown("## 🏠 Дашборд")
+        st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
         
-        st.markdown("---")
-        st.subheader("🔗 Полезные ссылки")
-        for name, url in INFO_LINKS.items():
-            st.markdown(f"[{name}]({url})")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📊 Загружено файлов", "0", delta=None)
+        with col2:
+            st.metric("📈 Обработано датчиков", "0", delta=None)
+        with col3:
+            st.metric("📅 Последний запуск", datetime.now().strftime("%d.%m.%Y"))
+        
+        if st.session_state.result is not None:
+            st.markdown("### 📊 Последние результаты")
+            st.dataframe(st.session_state.result.head(10))
+        else:
+            st.info("Нет загруженных данных. Перейдите в раздел 'Загрузка' или 'Ручной ввод'.")
+        
+        # Полезные ссылки
+        st.markdown("### 🔗 Полезные ресурсы")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            - [📖 Документация по тензодатчикам](https://example.com/docs)
+            - [🎥 Видео-туториал](https://example.com/video)
+            """)
+        with col2:
+            st.markdown("""
+            - [📄 Статья о мониторинге](https://example.com/article)
+            - [💬 Чат поддержки](https://example.com/chat)
+            """)
 
-    # Вкладки
-    tabs = st.tabs(["📂 Загрузка файла", "✏️ Ручной ввод", "🧪 Свайные испытания", 
-                    "📋 Подбор датчиков", "📈 Калибровка", "📊 Сравнение"])
-
-    # ---------- Вкладка 0: Загрузка файла ----------
-    with tabs[0]:
-        st.subheader("📂 Загрузка файла (плоская таблица)")
+    # ------------------- ЗАГРУЗКА -------------------
+    elif page == "Загрузка":
+        st.markdown("## 📂 Загрузка файла (плоская таблица)")
         st.markdown("Файл должен содержать колонки: **нагрузка (load)**, **частота (freq)**, **температура (temp)**.")
+        
         uploaded = st.file_uploader("Выберите Excel-файл", type=["xlsx", "xls"], key="flat_upload")
         if uploaded:
             try:
@@ -850,13 +840,13 @@ def main():
                 st.error(f"Ошибка: {e}")
                 logging.error(f"Ошибка в загрузке: {e}")
 
-    # ---------- Вкладка 1: Ручной ввод ----------
-    with tabs[1]:
-        st.subheader("✏️ Ручной ввод данных")
+    # ------------------- РУЧНОЙ ВВОД -------------------
+    elif page == "Ручной ввод":
+        st.markdown("## ✏️ Ручной ввод данных")
         st.markdown("Вставьте данные в формате: **нагрузка, частота, температура**.")
         st.markdown("Поддерживаются разделители: **запятая**, **табуляция**, **пробел**, **точка с запятой**.")
         
-        delimiter = st.selectbox("Выберите разделитель (если автоопределение не сработает)", 
+        delimiter = st.selectbox("Выберите разделитель", 
                                  ["Авто", "Запятая (,)", "Табуляция (\\t)", "Пробел", "Точка с запятой (;)"],
                                  index=0)
         sep_map = {
@@ -916,9 +906,9 @@ def main():
                 else:
                     st.error(msg)
 
-    # ---------- Вкладка 2: Свайные испытания ----------
-    with tabs[2]:
-        st.subheader("🧪 Свайные испытания")
+    # ------------------- СВАЙНЫЕ ИСПЫТАНИЯ -------------------
+    elif page == "Свайные испытания":
+        st.markdown("## 🧪 Свайные испытания")
         st.markdown("""
         Загрузите файл с листами **'Свая ...'** и **'ИСПЫТАНИЯ'**.  
         **Автоматический парсер** найдет данные. Если не сработает – используйте **ручную настройку**.
@@ -948,9 +938,9 @@ def main():
                 logging.error(f"Ошибка парсинга: {e}")
                 send_telegram(f"Ошибка парсинга: {e}")
 
-    # ---------- Вкладка 3: Подбор датчиков ----------
-    with tabs[3]:
-        st.subheader("📋 Подбор датчиков")
+    # ------------------- ПОДБОР ДАТЧИКОВ -------------------
+    elif page == "Подбор датчиков":
+        st.markdown("## 📋 Подбор датчиков")
         st.markdown("Выберите параметры, и система предложит подходящие датчики.")
         
         col1, col2 = st.columns(2)
@@ -985,23 +975,13 @@ def main():
             if recommendations:
                 df_rec = pd.DataFrame(recommendations).sort_values('Совместимость', ascending=False)
                 st.dataframe(df_rec, use_container_width=True)
-                
-                # Показываем детальную информацию о выбранном датчике
-                st.subheader("📘 Детальная информация о рекомендуемых датчиках")
-                for rec in recommendations[:3]:
-                    with st.expander(f"📐 {rec['Датчик']} (совместимость: {rec['Совместимость']} баллов)"):
-                        specs = SENSOR_SPECS[rec['Датчик']]
-                        for key, val in specs.items():
-                            if key != 'link':
-                                st.write(f"**{key}:** {val}")
-                        if specs.get('link'):
-                            st.markdown(f"[🔗 Подробнее]({specs['link']})")
+                st.info("Рекомендация: выберите датчик с максимальной совместимостью.")
             else:
                 st.warning("Не найдено подходящих датчиков. Попробуйте изменить параметры.")
 
-    # ---------- Вкладка 4: Интерактивная калибровка ----------
-    with tabs[4]:
-        st.subheader("🎛️ Интерактивная калибровка")
+    # ------------------- КАЛИБРОВКА -------------------
+    elif page == "Калибровка":
+        st.markdown("## 🎛️ Интерактивная калибровка")
         st.markdown("Изменяйте параметры ползунками и наблюдайте за изменением графика и статистики.")
         
         if st.session_state.result is not None:
@@ -1048,9 +1028,9 @@ def main():
         else:
             st.info("Сначала загрузите или введите данные в одной из предыдущих вкладок.")
 
-    # ---------- Вкладка 5: Сравнение датчиков ----------
-    with tabs[5]:
-        st.subheader("📊 Сравнение нескольких датчиков")
+    # ------------------- СРАВНЕНИЕ -------------------
+    elif page == "Сравнение":
+        st.markdown("## 📊 Сравнение нескольких датчиков")
         st.markdown("Загрузите несколько файлов для сравнения на одном графике.")
         
         uploaded_files = st.file_uploader("Выберите файлы .xlsx", type=["xlsx", "xls"], 
@@ -1096,6 +1076,46 @@ def main():
                 st.warning("Не удалось обработать ни одного файла.")
         else:
             st.info("Загрузите файлы для сравнения.")
+
+    # ------------------- СПРАВКА -------------------
+    elif page == "Справка":
+        st.markdown("## 📚 Справка и полезные ссылки")
+        
+        st.markdown("### 📖 Документация")
+        st.markdown("""
+        - [Руководство пользователя](https://example.com/user-guide)
+        - [Техническая документация по датчикам](https://example.com/tech-docs)
+        - [API Reference](https://example.com/api)
+        """)
+        
+        st.markdown("### 🎥 Видео-материалы")
+        st.markdown("""
+        - [Как пользоваться приложением](https://example.com/video-tutorial)
+        - [Обработка свайных испытаний](https://example.com/pile-test)
+        - [Калибровка датчиков](https://example.com/calibration)
+        """)
+        
+        st.markdown("### 📄 Статьи и публикации")
+        st.markdown("""
+        - [Мониторинг напряжений в грунтах](https://example.com/article1)
+        - [Выбор тензодатчиков](https://example.com/article2)
+        - [Обработка данных](https://example.com/article3)
+        """)
+        
+        st.markdown("### 📞 Контакты")
+        st.markdown("""
+        - **Email:** support@geofundament.ru
+        - **Телефон:** +7 (495) 123-45-67
+        - **Telegram:** @geofundament_bot
+        """)
+        
+        st.markdown("### ℹ️ О приложении")
+        st.markdown("""
+        **Версия:** 2.0  
+        **Разработчик:** Геофундамент  
+        **Лицензия:** MIT  
+        **Дата сборки:** 26.07.2026
+        """)
 
 if __name__ == "__main__":
     logging.basicConfig(filename=CONFIG["LOG_FILE"], level=logging.INFO)
