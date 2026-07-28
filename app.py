@@ -83,7 +83,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return f"Тип: {sensor_type}\nK: {SENSOR_SPECS.get(sensor_type, {}).get('k_factor', 'неизвестен')}"
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (с переименованием)
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -141,35 +141,42 @@ class DataProcessor:
         if K is None:
             return None, None
         df = df.copy()
+        # Расчёт прироста деформации
         df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
         df['stress_MPa'] = CONFIG["E_MODULUS"] * df['strain'] / 1_000_000 * 0.00689476
 
-        # Переименование столбца для вывода
+        # Создаём русские названия для отображения
         df['Прирост деформации, μϵ'] = df['strain']
+        df['Напряжение, МПа'] = df['stress_MPa']
 
         stats = {
             'Количество точек': len(df),
             'Средняя деформация, μϵ': df['Прирост деформации, μϵ'].mean(),
             'Макс. деформация, μϵ': df['Прирост деформации, μϵ'].max(),
             'Мин. деформация, μϵ': df['Прирост деформации, μϵ'].min(),
-            'Среднее напряжение, МПа': df['stress_MPa'].mean(),
-            'Макс. напряжение, МПа': df['stress_MPa'].max(),
-            'Мин. напряжение, МПа': df['stress_MPa'].min(),
+            'Среднее напряжение, МПа': df['Напряжение, МПа'].mean(),
+            'Макс. напряжение, МПа': df['Напряжение, МПа'].max(),
+            'Мин. напряжение, МПа': df['Напряжение, МПа'].min(),
             'Std деформация, μϵ': df['Прирост деформации, μϵ'].std(),
             'Статистика': df['Прирост деформации, μϵ'].describe().to_dict()
         }
         return df, stats
 
 # ============================================================
-# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (с переименованием)
+# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (с русскими заголовками)
 # ============================================================
 class ReportGenerator:
     @staticmethod
     def to_excel(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str) -> bytes:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Выводим столбцы с новым именем
-            out_df = df[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'stress_MPa']].copy()
+            # Выбираем и переименовываем колонки для вывода
+            out_df = df[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
+            out_df.rename(columns={
+                'load': 'Нагрузка, тс',
+                'freq': 'Частота, Гц',
+                'temp': 'Температура, °C'
+            }, inplace=True)
             out_df.to_excel(writer, index=False, sheet_name='Результат')
             stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
             stats_df.to_excel(writer, sheet_name='Сводка')
@@ -280,7 +287,7 @@ class ReportGenerator:
             row_cells[1].text = f"{row['freq']:.1f}"
             row_cells[2].text = f"{row['temp']:.1f}"
             row_cells[3].text = f"{row['Прирост деформации, μϵ']:.3f}"
-            row_cells[4].text = f"{row['stress_MPa']:.3f}"
+            row_cells[4].text = f"{row['Напряжение, МПа']:.3f}"
         doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -288,12 +295,24 @@ class ReportGenerator:
         return buffer
 
 # ============================================================
-# 6. UI-ФУНКЦИИ (с переименованием)
+# 6. UI-ФУНКЦИИ (с русскими заголовками)
 # ============================================================
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
-    # Показываем таблицу с новым именем столбца
-    st.dataframe(result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'stress_MPa']])
+    # Создаём копию с русскими заголовками для отображения
+    display_df = result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
+    display_df.rename(columns={
+        'load': 'Нагрузка, тс',
+        'freq': 'Частота, Гц',
+        'temp': 'Температура, °C'
+    }, inplace=True)
+    st.dataframe(display_df.style.format({
+        'Нагрузка, тс': '{:.2f}',
+        'Частота, Гц': '{:.1f}',
+        'Температура, °C': '{:.1f}',
+        'Прирост деформации, μϵ': '{:.5f}',
+        'Напряжение, МПа': '{:.5f}'
+    }))
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -442,7 +461,14 @@ def main():
         st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
         if st.session_state.result is not None:
             st.markdown("### 📊 Последние результаты")
-            st.dataframe(st.session_state.result.head(10))
+            # Показываем последние результаты с русскими заголовками
+            res = st.session_state.result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
+            res.rename(columns={
+                'load': 'Нагрузка, тс',
+                'freq': 'Частота, Гц',
+                'temp': 'Температура, °C'
+            }, inplace=True)
+            st.dataframe(res.head(10))
         else:
             st.info("Нет загруженных данных. Перейдите в раздел 'Загрузка' или 'Ручной ввод'.")
 
