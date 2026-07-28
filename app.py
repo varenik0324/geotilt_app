@@ -652,13 +652,46 @@ def show_pile_results(results: Dict[str, pd.DataFrame], info: Dict):
             csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(f"📥 CSV для {sensor}", data=csv, file_name=f"{sensor}.csv", mime="text/csv")
 
+# ---------- ИЗМЕНЁННАЯ ФУНКЦИЯ ОТОБРАЖЕНИЯ (НАГРУЗКА/РАЗГРУЗКА) ----------
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
     st.dataframe(result)
+    
+    # Определяем фазы (нагрузка/разгрузка) на основе изменения нагрузки
+    df_plot = result.copy()
+    phases = ['load']  # первая точка
+    for i in range(1, len(df_plot)):
+        if df_plot['load'].iloc[i] >= df_plot['load'].iloc[i-1]:
+            phases.append('load')
+        else:
+            phases.append('unload')
+    df_plot['phase'] = phases
+    
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=result['load'], y=result['strain'], mode='lines+markers', name='Деформация, μϵ'))
+    # Trace для нагрузки
+    df_load = df_plot[df_plot['phase'] == 'load']
+    if not df_load.empty:
+        fig.add_trace(go.Scatter(
+            x=df_load['load'],
+            y=df_load['strain'],
+            mode='lines+markers',
+            name='Нагрузка',
+            line=dict(color='blue'),
+            marker=dict(color='blue')
+        ))
+    # Trace для разгрузки
+    df_unload = df_plot[df_plot['phase'] == 'unload']
+    if not df_unload.empty:
+        fig.add_trace(go.Scatter(
+            x=df_unload['load'],
+            y=df_unload['strain'],
+            mode='lines+markers',
+            name='Разгрузка',
+            line=dict(color='red'),
+            marker=dict(color='red')
+        ))
     fig.update_layout(
-        title="Деформация от нагрузки",
+        title="Деформация от нагрузки (нагрузка/разгрузка)",
         xaxis_title="Нагрузка, тс",
         yaxis_title="Деформация, μϵ",
         template=st.session_state.get('template', 'plotly_white')
@@ -698,6 +731,7 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
+# -------------------------------------------------------------------------
 
 # ============================================================
 # 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (С ОБНОВЛЁННЫМИ ССЫЛКАМИ)
