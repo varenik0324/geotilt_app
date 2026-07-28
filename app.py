@@ -83,7 +83,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return f"Тип: {sensor_type}\nK: {SENSOR_SPECS.get(sensor_type, {}).get('k_factor', 'неизвестен')}"
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (с усиленной защитой)
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (максимально защищённый)
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -118,6 +118,8 @@ class DataProcessor:
         df_clean = df_clean.dropna(subset=required)
         if df_clean.empty:
             return False, "После очистки не осталось числовых строк. Проверьте данные.", df_clean
+        # Принудительно приводим к float
+        df_clean[required] = df_clean[required].astype(float)
         if errors:
             msg = "Обнаружены проблемы с данными:\n" + "\n".join(errors) + "\nПроблемные строки были удалены."
             return True, msg, df_clean
@@ -128,21 +130,28 @@ class DataProcessor:
     def process_strain_data(df: pd.DataFrame, f0: float, t0: float,
                             sensor_type: str, g_val: Optional[float] = None,
                             c_val: Optional[float] = None) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
+        # Защита на случай, если df пришёл с нечисловыми значениями
         if df is None or df.empty:
             return None, None
 
-        # ---- ЗАЩИТА ОТ НЕЧИСЛОВЫХ ДАННЫХ ----
-        # Принудительное преобразование трёх столбцов в числа
+        # Копируем
+        df = df.copy()
+
+        # Принудительно преобразуем все три столбца в числа
         for col in ['load', 'freq', 'temp']:
             if col in df.columns:
                 df[col] = pd.to_numeric(
                     df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip(),
                     errors='coerce'
                 )
+        # Удаляем строки с NaN
         df = df.dropna(subset=['load', 'freq', 'temp'])
         if df.empty:
             return None, None
+        # Явно приводим к float
+        df[['load', 'freq', 'temp']] = df[['load', 'freq', 'temp']].astype(float)
 
+        # Определяем коэффициент K
         K = {
             'MAS‑VWS‑EM15H (встроенный)': CONFIG["DEFAULT_K_EM15H"],
             'MAS‑VWS‑SM25H (поверхностный длинная база)': CONFIG["DEFAULT_K_SM25H"]
@@ -154,8 +163,7 @@ class DataProcessor:
         if K is None:
             return None, None
 
-        df = df.copy()
-        # Расчёт прироста деформации
+        # Расчёт прироста деформации (теперь все данные числовые, ошибок быть не должно)
         df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
         df['stress_MPa'] = CONFIG["E_MODULUS"] * df['strain'] / 1_000_000 * 0.00689476
 
