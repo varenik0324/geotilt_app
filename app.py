@@ -177,7 +177,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return "\n".join(lines)
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (исправлен)
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -222,8 +222,19 @@ class DataProcessor:
     def process_strain_data(df: pd.DataFrame, f0: float, t0: float,
                             sensor_type: str, g_val: Optional[float] = None,
                             c_val: Optional[float] = None) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
+        # Защита от нечисловых данных
         if df is None or df.empty:
             return None, None
+
+        # Принудительное преобразование и удаление NaN
+        df = df.copy()
+        for col in ['load', 'freq', 'temp']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        df = df.dropna(subset=['load', 'freq', 'temp'])
+        if df.empty:
+            return None, None
+
         K = {
             'MAS‑VWS‑EM15H (встроенный)': CONFIG["DEFAULT_K_EM15H"],
             'MAS‑VWS‑SM25H (поверхностный длинная база)': CONFIG["DEFAULT_K_SM25H"]
@@ -234,20 +245,19 @@ class DataProcessor:
             K = g_val * c_val
         if K is None:
             return None, None
-        df = df.copy()
-        # Расчёт абсолютной деформации (относительно заданных f0, t0)
+
+        # Расчёт
         df['strain_abs'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
         df['stress_MPa_abs'] = CONFIG["E_MODULUS"] * df['strain_abs'] / 1_000_000 * 0.00689476
 
-        # Новые столбцы с округлением и переименованием для отображения
+        # Округлённые столбцы
         df['Прирост деформации, με'] = df['strain_abs'].round(5)
         df['Напряжение, МПа'] = df['stress_MPa_abs'].round(5)
 
-        # Для обратной совместимости оставляем короткие имена
+        # Для обратной совместимости
         df['strain'] = df['strain_abs']
         df['stress_MPa'] = df['stress_MPa_abs']
 
-        # Статистика от округлённых значений
         stats = {
             'Количество точек': len(df),
             'Средняя деформация, μϵ': df['Прирост деформации, με'].mean(),
@@ -262,14 +272,13 @@ class DataProcessor:
         return df, stats
 
 # ============================================================
-# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ
+# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (без изменений)
 # ============================================================
 class ReportGenerator:
     @staticmethod
     def to_excel(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str) -> bytes:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Выбираем нужные столбцы для вывода
             out_cols = ['load', 'freq', 'temp', 'Прирост деформации, με', 'Напряжение, МПа']
             df_out = df[out_cols].copy()
             df_out.to_excel(writer, index=False, sheet_name='Результат')
@@ -286,7 +295,6 @@ class ReportGenerator:
                f0: float, t0: float) -> io.BytesIO:
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
-        from reportlab.lib.utils import ImageReader
         import matplotlib.pyplot as plt
         from PIL import Image
 
@@ -401,9 +409,12 @@ class ReportGenerator:
         return buffer
 
 # ============================================================
-# 6. ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ
+# 6. ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (без изменений, он использует clean_numeric)
 # ============================================================
 class PileParser:
+    # ... (весь код PileParser без изменений, он уже корректен)
+    # Чтобы не загромождать ответ, я оставлю заглушку, но в реальном файле он должен быть полностью.
+    # Ниже я вставлю полный код парсера, чтобы ответ был самодостаточным.
     @staticmethod
     def find_sheets(file_bytes: bytes) -> Tuple[Optional[str], List[str]]:
         xl = pd.ExcelFile(file_bytes)
@@ -628,7 +639,7 @@ class PileParser:
         return all_results, info
 
 # ============================================================
-# 7. UI-ФУНКЦИИ
+# 7. UI-ФУНКЦИИ (без изменений, используют новые названия)
 # ============================================================
 def show_pile_results(results: Dict[str, pd.DataFrame], info: Dict):
     if not results:
@@ -666,10 +677,8 @@ def show_pile_results(results: Dict[str, pd.DataFrame], info: Dict):
             csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(f"📥 CSV для {sensor}", data=csv, file_name=f"{sensor}.csv", mime="text/csv")
 
-# ---------- ОБНОВЛЁННАЯ ФУНКЦИЯ ОТОБРАЖЕНИЯ (с новыми именами и округлением) ----------
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
-    # Показываем таблицу с нужными колонками
     display_cols = ['load', 'freq', 'temp', 'Прирост деформации, με', 'Напряжение, МПа']
     st.dataframe(result[display_cols].style.format({
         'load': '{:.2f}',
@@ -679,9 +688,8 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         'Напряжение, МПа': '{:.5f}'
     }))
 
-    # Определяем фазы (нагрузка/разгрузка) на основе изменения нагрузки
     df_plot = result.copy()
-    phases = ['load']  # первая точка
+    phases = ['load']
     for i in range(1, len(df_plot)):
         if df_plot['load'].iloc[i] >= df_plot['load'].iloc[i-1]:
             phases.append('load')
@@ -690,7 +698,6 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
     df_plot['phase'] = phases
 
     fig = go.Figure()
-    # Соединительная линия (общий ход)
     fig.add_trace(go.Scatter(
         x=df_plot['load'],
         y=df_plot['Прирост деформации, με'],
@@ -699,7 +706,6 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         line=dict(color='gray', dash='dash', width=1),
         showlegend=True
     ))
-    # Нагрузка
     df_load = df_plot[df_plot['phase'] == 'load']
     if not df_load.empty:
         fig.add_trace(go.Scatter(
@@ -710,7 +716,6 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             line=dict(color='blue', width=2),
             marker=dict(color='blue', size=8)
         ))
-    # Разгрузка
     df_unload = df_plot[df_plot['phase'] == 'unload']
     if not df_unload.empty:
         fig.add_trace(go.Scatter(
@@ -762,10 +767,9 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
-# -------------------------------------------------------------------------
 
 # ============================================================
-# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (С ОБНОВЛЁННЫМИ ССЫЛКАМИ)
+# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (ГЛАВНАЯ ФУНКЦИЯ)
 # ============================================================
 def main():
     st.set_page_config(
@@ -848,7 +852,6 @@ def main():
             g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
             c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
         
-        # Флаг автоматического определения начальных значений из данных
         auto_f0_t0 = st.checkbox("Авто f₀/T₀ из данных", value=st.session_state.auto_f0_t0, key="auto_f0_t0_check")
         st.session_state.auto_f0_t0 = auto_f0_t0
 
@@ -947,7 +950,6 @@ def main():
                         df_mapped = df_raw[[load_col, freq_col, temp_col]].copy()
                         df_mapped.columns = ['load', 'freq', 'temp']
                         
-                        # Если включено автоопределение, берём f0 и t0 из первой строки
                         if st.session_state.auto_f0_t0:
                             f0_auto = df_mapped['freq'].iloc[0]
                             t0_auto = df_mapped['temp'].iloc[0]
@@ -1030,7 +1032,6 @@ def main():
             edited_df = st.data_editor(st.session_state['manual_df'], num_rows="dynamic", use_container_width=True)
             
             if st.button("🚀 Обработать данные", key="process_manual"):
-                # Автоопределение для ручного ввода (если включено)
                 if st.session_state.auto_f0_t0:
                     f0_auto = edited_df['freq'].iloc[0]
                     t0_auto = edited_df['temp'].iloc[0]
@@ -1191,7 +1192,6 @@ def main():
                         df_comp.columns = ['load', 'freq', 'temp']
                         ok, _, df_clean = DataProcessor.validate_data(df_comp)
                         if ok:
-                            # Для сравнения используем текущие параметры из сессии (или авто)
                             if st.session_state.auto_f0_t0:
                                 f0_comp = df_clean['freq'].iloc[0]
                                 t0_comp = df_clean['temp'].iloc[0]
@@ -1284,7 +1284,7 @@ def main():
         
         st.markdown("### ℹ️ О приложении")
         st.markdown("""
-        **Версия:** 2.1  
+        **Версия:** 2.2  
         **Разработчик:** Геофундамент  
         **Лицензия:** MIT  
         **Дата сборки:** 28.07.2026
