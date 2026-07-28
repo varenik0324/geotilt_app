@@ -80,7 +80,7 @@ def get_pdf_path(filename: str) -> Optional[str]:
     return None
 
 # ============================================================
-# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные из PDF-руководств)
+# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ
 # ============================================================
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -177,7 +177,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return "\n".join(lines)
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (исправлен)
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (ИСПРАВЛЕН)
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -226,15 +226,26 @@ class DataProcessor:
         if df is None or df.empty:
             return None, None
 
-        # Принудительное преобразование и удаление NaN
+        # Копируем и преобразуем все колонки в числа
         df = df.copy()
-        for col in ['load', 'freq', 'temp']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        df = df.dropna(subset=['load', 'freq', 'temp'])
+        required = ['load', 'freq', 'temp']
+        for col in required:
+            if col not in df.columns:
+                return None, None
+            # Заменяем запятые на точки, убираем пробелы и преобразуем в float
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip(),
+                errors='coerce'
+            )
+        # Удаляем строки с NaN
+        df = df.dropna(subset=required)
         if df.empty:
             return None, None
 
+        # Принудительно конвертируем в float (на случай, если остались объекты)
+        df[required] = df[required].astype(float)
+
+        # Определяем K
         K = {
             'MAS‑VWS‑EM15H (встроенный)': CONFIG["DEFAULT_K_EM15H"],
             'MAS‑VWS‑SM25H (поверхностный длинная база)': CONFIG["DEFAULT_K_SM25H"]
@@ -246,11 +257,11 @@ class DataProcessor:
         if K is None:
             return None, None
 
-        # Расчёт
+        # Расчёт деформации
         df['strain_abs'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
         df['stress_MPa_abs'] = CONFIG["E_MODULUS"] * df['strain_abs'] / 1_000_000 * 0.00689476
 
-        # Округлённые столбцы
+        # Округлённые столбцы для вывода
         df['Прирост деформации, με'] = df['strain_abs'].round(5)
         df['Напряжение, МПа'] = df['stress_MPa_abs'].round(5)
 
@@ -409,12 +420,9 @@ class ReportGenerator:
         return buffer
 
 # ============================================================
-# 6. ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (без изменений, он использует clean_numeric)
+# 6. ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (полный, без изменений)
 # ============================================================
 class PileParser:
-    # ... (весь код PileParser без изменений, он уже корректен)
-    # Чтобы не загромождать ответ, я оставлю заглушку, но в реальном файле он должен быть полностью.
-    # Ниже я вставлю полный код парсера, чтобы ответ был самодостаточным.
     @staticmethod
     def find_sheets(file_bytes: bytes) -> Tuple[Optional[str], List[str]]:
         xl = pd.ExcelFile(file_bytes)
@@ -639,7 +647,7 @@ class PileParser:
         return all_results, info
 
 # ============================================================
-# 7. UI-ФУНКЦИИ (без изменений, используют новые названия)
+# 7. UI-ФУНКЦИИ
 # ============================================================
 def show_pile_results(results: Dict[str, pd.DataFrame], info: Dict):
     if not results:
@@ -769,7 +777,7 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         )
 
 # ============================================================
-# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (ГЛАВНАЯ ФУНКЦИЯ)
+# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ
 # ============================================================
 def main():
     st.set_page_config(
@@ -779,7 +787,6 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Инициализация состояния
     for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles', 'page', 'auto_f0_t0']:
         if key not in st.session_state:
             if key == 'template':
@@ -793,7 +800,6 @@ def main():
             else:
                 st.session_state[key] = None if key not in ['profiles'] else {}
 
-    # Шапка
     col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
         st.image("https://via.placeholder.com/80x40?text=GF", width=80)
@@ -803,7 +809,6 @@ def main():
         theme_toggle = st.toggle("🌙 Тёмная тема", value=st.session_state.template == 'plotly_dark')
         st.session_state.template = 'plotly_dark' if theme_toggle else 'plotly_white'
 
-    # Боковая панель
     with st.sidebar:
         st.markdown("### 🧭 Навигация")
         pages = {
@@ -826,10 +831,8 @@ def main():
         if specs:
             st.caption(f"**K:** {specs.get('k_factor')}")
             st.caption(f"**Диапазон:** {specs.get('measuring_range')}")
-            
             with st.expander("📄 Полная спецификация датчика", expanded=False):
                 st.text(get_sensor_specs(sensor_type))
-            
             pdf_file = specs.get('pdf_file')
             if pdf_file:
                 pdf_path = get_pdf_path(pdf_file)
@@ -891,13 +894,11 @@ def main():
                     st.session_state.c_val = p['c_val']
                 st.rerun()
 
-    # ---- Основные вкладки ----
     page = st.session_state.page
     
     if page == "Главная":
         st.markdown("## 🏠 Дашборд")
         st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
-        
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("📊 Загружено файлов", "0", delta=None)
@@ -905,13 +906,11 @@ def main():
             st.metric("📈 Обработано датчиков", "0", delta=None)
         with col3:
             st.metric("📅 Последний запуск", datetime.now().strftime("%d.%m.%Y"))
-        
         if st.session_state.result is not None:
             st.markdown("### 📊 Последние результаты")
             st.dataframe(st.session_state.result.head(10))
         else:
             st.info("Нет загруженных данных. Перейдите в раздел 'Загрузка' или 'Ручной ввод'.")
-        
         st.markdown("### 🔗 Полезные ресурсы")
         col1, col2 = st.columns(2)
         with col1:
@@ -935,7 +934,6 @@ def main():
                 df_raw = pd.read_excel(uploaded)
                 st.write("📋 Предпросмотр загруженных данных:")
                 st.dataframe(df_raw.head(10))
-                
                 if len(df_raw.columns) >= 3:
                     cols = df_raw.columns.tolist()
                     col1, col2, col3 = st.columns(3)
@@ -945,11 +943,9 @@ def main():
                         freq_col = st.selectbox("Столбец с частотой", cols, index=1 if len(cols)>1 else 0)
                     with col3:
                         temp_col = st.selectbox("Столбец с температурой", cols, index=2 if len(cols)>2 else 0)
-                    
                     if load_col and freq_col and temp_col:
                         df_mapped = df_raw[[load_col, freq_col, temp_col]].copy()
                         df_mapped.columns = ['load', 'freq', 'temp']
-                        
                         if st.session_state.auto_f0_t0:
                             f0_auto = df_mapped['freq'].iloc[0]
                             t0_auto = df_mapped['temp'].iloc[0]
@@ -957,10 +953,8 @@ def main():
                         else:
                             f0_auto = st.session_state.f0
                             t0_auto = st.session_state.t0
-                        
                         st.subheader("✏️ Редактирование данных (опционально)")
                         edited_df = st.data_editor(df_mapped, num_rows="dynamic", use_container_width=True)
-                        
                         if st.button("🚀 Обработать данные", key="process_flat"):
                             ok, msg, df_clean = DataProcessor.validate_data(edited_df)
                             if ok:
@@ -987,7 +981,6 @@ def main():
         st.markdown("## ✏️ Ручной ввод данных")
         st.markdown("Вставьте данные в формате: **нагрузка, частота, температура**.")
         st.markdown("Поддерживаются разделители: **запятая**, **табуляция**, **пробел**, **точка с запятой**.")
-        
         delimiter = st.selectbox("Выберите разделитель", 
                                  ["Авто", "Запятая (,)", "Табуляция (\\t)", "Пробел", "Точка с запятой (;)"],
                                  index=0)
@@ -999,9 +992,7 @@ def main():
             "Точка с запятой (;)": ";"
         }
         sep = sep_map[delimiter]
-        
         text = st.text_area("Введите данные (каждая строка – одна точка)", height=200)
-        
         if st.button("🔄 Предпросмотр", key="preview_manual"):
             if not text.strip():
                 st.warning("Введите данные.")
@@ -1026,11 +1017,9 @@ def main():
                         st.session_state['manual_df'] = df_preview
                 except Exception as e:
                     st.error(f"Ошибка предпросмотра: {e}")
-        
         if 'manual_df' in st.session_state and st.session_state['manual_df'] is not None:
             st.subheader("✏️ Редактирование данных")
             edited_df = st.data_editor(st.session_state['manual_df'], num_rows="dynamic", use_container_width=True)
-            
             if st.button("🚀 Обработать данные", key="process_manual"):
                 if st.session_state.auto_f0_t0:
                     f0_auto = edited_df['freq'].iloc[0]
@@ -1056,22 +1045,17 @@ def main():
     
     elif page == "Свайные испытания":
         st.markdown("## 🧪 Свайные испытания")
-        st.markdown("""
-        Загрузите файл с листами **'Свая ...'** и **'ИСПЫТАНИЯ'**.  
-        **Автоматический парсер** найдет данные. Если не сработает – используйте **ручную настройку**.
-        """)
+        st.markdown("Загрузите файл с листами **'Свая ...'** и **'ИСПЫТАНИЯ'**.")
         uploaded_pile = st.file_uploader("Выберите .xlsx", type=["xlsx"], key="pile_upload")
         if uploaded_pile:
             file_bytes = uploaded_pile.read()
             df_preview = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, header=None, nrows=30)
             st.subheader("📋 Превью файла (первые 30 строк)")
             st.dataframe(df_preview)
-
-            with st.expander("⚙️ Ручная настройка (если автоматика не сработала)", expanded=False):
+            with st.expander("⚙️ Ручная настройка", expanded=False):
                 manual_header = st.number_input("Строка заголовков (0-индекс)", min_value=0, max_value=50, value=4, step=1)
                 sensor_col = st.number_input("Столбец с датчиками (0-индекс)", min_value=0, max_value=20, value=0, step=1)
                 use_manual = st.checkbox("Использовать ручные настройки")
-
             try:
                 with st.spinner("Обработка файла..."):
                     results, info = PileParser.parse_pile_data(
@@ -1087,8 +1071,6 @@ def main():
     
     elif page == "Подбор датчиков":
         st.markdown("## 📋 Подбор датчиков")
-        st.markdown("Выберите параметры, и система предложит подходящие датчики.")
-        
         col1, col2 = st.columns(2)
         with col1:
             meas_param = st.selectbox("Измеряемый параметр", 
@@ -1097,7 +1079,6 @@ def main():
         with col2:
             accuracy_req = st.selectbox("Требуемая точность", ["0.5% F.S", "0.1% F.S"])
             temp_range = st.selectbox("Диапазон температур", ["-20…+80 °C", "-40…+90 °C", "-20…+60 °C"])
-        
         if st.button("🔍 Подобрать датчик"):
             recommendations = []
             for sensor, specs in SENSOR_SPECS.items():
@@ -1117,7 +1098,6 @@ def main():
                     reasons.append(f"✓ температурный диапазон {temp_range}")
                 if score > 0:
                     recommendations.append({"Датчик": sensor, "Совместимость": score, "Обоснование": "; ".join(reasons)})
-            
             if recommendations:
                 df_rec = pd.DataFrame(recommendations).sort_values('Совместимость', ascending=False)
                 st.dataframe(df_rec, use_container_width=True)
@@ -1127,11 +1107,8 @@ def main():
     
     elif page == "Калибровка":
         st.markdown("## 🎛️ Интерактивная калибровка")
-        st.markdown("Изменяйте параметры ползунками и наблюдайте за изменением графика и статистики.")
-        
         if st.session_state.result is not None:
             df_orig = st.session_state.result.copy()
-            
             col1, col2 = st.columns(2)
             with col1:
                 f0_cal = st.slider("f₀ (Гц)", min_value=500.0, max_value=2000.0, value=st.session_state.f0, step=0.5)
@@ -1139,11 +1116,9 @@ def main():
             with col2:
                 g_cal = st.slider("G (если нужен)", min_value=0.5, max_value=2.0, value=g_val or 1.0, step=0.001)
                 c_cal = st.slider("C (если нужен)", min_value=0.5, max_value=2.0, value=c_val or 1.0, step=0.001)
-            
             result_cal, stats_cal = DataProcessor.process_strain_data(
                 df_orig, f0_cal, t0_cal, sensor_type, g_cal, c_cal
             )
-            
             if result_cal is not None:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=result_cal['load'], y=result_cal['Прирост деформации, με'], 
@@ -1155,7 +1130,6 @@ def main():
                     template=st.session_state.template
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Средняя деформация", f"{stats_cal['Средняя деформация, μϵ']:.5f} μϵ")
@@ -1163,7 +1137,6 @@ def main():
                 with col2:
                     st.metric("Среднее напряжение", f"{stats_cal['Среднее напряжение, МПа']:.5f} МПа")
                     st.metric("Мин. деформация", f"{stats_cal['Мин. деформация, μϵ']:.5f} μϵ")
-                
                 if st.button("✅ Применить эти параметры к основному результату"):
                     st.session_state.f0 = f0_cal
                     st.session_state.t0 = t0_cal
@@ -1175,15 +1148,11 @@ def main():
     
     elif page == "Сравнение":
         st.markdown("## 📊 Сравнение нескольких датчиков")
-        st.markdown("Загрузите несколько файлов для сравнения на одном графике.")
-        
         uploaded_files = st.file_uploader("Выберите файлы .xlsx", type=["xlsx", "xls"], 
                                           accept_multiple_files=True, key="compare_upload")
-        
         if uploaded_files:
             compare_what = st.selectbox("Что сравнивать?", ["Прирост деформации, μϵ", "Напряжение, МПа", "Частота, Гц"])
             fig_comp = go.Figure()
-            
             for file in uploaded_files:
                 try:
                     df_raw = pd.read_excel(file)
@@ -1213,7 +1182,6 @@ def main():
                                 ))
                 except Exception as e:
                     st.warning(f"Ошибка обработки {file.name}: {e}")
-            
             if fig_comp.data:
                 fig_comp.update_layout(
                     title=f"Сравнение датчиков по параметру: {compare_what}",
@@ -1229,14 +1197,12 @@ def main():
     
     elif page == "Справка":
         st.markdown("## 📚 Справка и полезные ссылки")
-        
         st.markdown("### 📖 Документация")
         st.markdown("""
         - [Руководство пользователя](https://example.com/user-guide)
         - [Техническая документация по датчикам](https://example.com/tech-docs)
         - [API Reference](https://example.com/api)
         """)
-        
         st.markdown("### 📄 Руководства по датчикам")
         col1, col2 = st.columns(2)
         with col1:
@@ -1259,32 +1225,28 @@ def main():
             - [Скачать PDF](https://www.masios.com/docs/MAS-HVLog-sf.pdf)
             - [Страница продукта](https://www.masios.com/product/hvlog)
             """)
-        
-        st.markdown("### 📄 Статьи и публикации (ОБНОВЛЕНО)")
+        st.markdown("### 📄 Статьи и публикации")
         st.markdown("""
         - [Мониторинг напряжений в грунтах](https://example.com/article1)
         - [Выбор тензодатчиков](https://example.com/article2)
         - [Обработка данных](https://example.com/article3)
         - [Датчики давления грунта — месдоза, и датчики деформаций — тензодатчики](https://geofundament.ru/datchiki-davlenija-grunta-mesdoza-i-datchiki-deformacij-tenzodatchiki/)
         """)
-        
         st.markdown("### 🎥 Видео-материалы")
         st.markdown("""
         - [Как пользоваться приложением](https://example.com/video-tutorial)
         - [Обработка свайных испытаний](https://example.com/pile-test)
         - [Калибровка датчиков](https://example.com/calibration)
         """)
-        
         st.markdown("### 📞 Контакты")
         st.markdown("""
         - **Email:** support@geofundament.ru
         - **Телефон:** +7 (495) 123-45-67
         - **Telegram:** @geofundament_bot
         """)
-        
         st.markdown("### ℹ️ О приложении")
         st.markdown("""
-        **Версия:** 2.2  
+        **Версия:** 2.3  
         **Разработчик:** Геофундамент  
         **Лицензия:** MIT  
         **Дата сборки:** 28.07.2026
