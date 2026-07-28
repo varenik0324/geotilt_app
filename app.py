@@ -83,7 +83,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return f"Тип: {sensor_type}\nK: {SENSOR_SPECS.get(sensor_type, {}).get('k_factor', 'неизвестен')}"
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (с усиленной защитой)
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -130,6 +130,19 @@ class DataProcessor:
                             c_val: Optional[float] = None) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
         if df is None or df.empty:
             return None, None
+
+        # ---- ЗАЩИТА ОТ НЕЧИСЛОВЫХ ДАННЫХ ----
+        # Принудительное преобразование трёх столбцов в числа
+        for col in ['load', 'freq', 'temp']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(
+                    df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip(),
+                    errors='coerce'
+                )
+        df = df.dropna(subset=['load', 'freq', 'temp'])
+        if df.empty:
+            return None, None
+
         K = {
             'MAS‑VWS‑EM15H (встроенный)': CONFIG["DEFAULT_K_EM15H"],
             'MAS‑VWS‑SM25H (поверхностный длинная база)': CONFIG["DEFAULT_K_SM25H"]
@@ -140,6 +153,7 @@ class DataProcessor:
             K = g_val * c_val
         if K is None:
             return None, None
+
         df = df.copy()
         # Расчёт прироста деформации
         df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
@@ -170,7 +184,6 @@ class ReportGenerator:
     def to_excel(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str) -> bytes:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Выбираем и переименовываем колонки для вывода
             out_df = df[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
             out_df.rename(columns={
                 'load': 'Нагрузка, тс',
@@ -299,7 +312,6 @@ class ReportGenerator:
 # ============================================================
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
-    # Создаём копию с русскими заголовками для отображения
     display_df = result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
     display_df.rename(columns={
         'load': 'Нагрузка, тс',
@@ -419,9 +431,8 @@ def main():
             g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
             c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
 
-        # Поля f0 и t0 теперь только для информации, так как всегда берём из данных
-        st.info("f₀ и T₀ автоматически определяются из первой строки загруженных данных.")
-        st.caption(f"Текущие значения (заданы по умолчанию): f₀ = {st.session_state.f0:.1f} Гц, T₀ = {st.session_state.t0:.1f} °C")
+        st.info("f₀ и T₀ автоматически определяются из первой строки данных.")
+        st.caption(f"Текущие значения по умолчанию: f₀ = {st.session_state.f0:.1f} Гц, T₀ = {st.session_state.t0:.1f} °C (не используются)")
 
         st.markdown("---")
         profile_name = st.text_input("💾 Сохранить профиль", value="default")
@@ -460,7 +471,6 @@ def main():
         st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
         if st.session_state.result is not None:
             st.markdown("### 📊 Последние результаты")
-            # Показываем последние результаты с русскими заголовками
             res = st.session_state.result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
             res.rename(columns={
                 'load': 'Нагрузка, тс',
@@ -496,7 +506,7 @@ def main():
                         df_mapped = df_raw[[load_col, freq_col, temp_col]].copy()
                         df_mapped.columns = ['load', 'freq', 'temp']
 
-                        # Всегда берём f0 и t0 из первой строки
+                        # Всегда берём из первой строки
                         f0_auto = df_mapped['freq'].iloc[0]
                         t0_auto = df_mapped['temp'].iloc[0]
                         st.info(f"Автоопределены: f₀ = {f0_auto:.1f} Гц, T₀ = {t0_auto:.1f} °C")
@@ -576,7 +586,6 @@ def main():
             edited_df = st.data_editor(st.session_state['manual_df'], num_rows="dynamic", use_container_width=True)
 
             if st.button("🚀 Обработать данные", key="process_manual"):
-                # Всегда берём f0 и t0 из первой строки
                 f0_auto = edited_df['freq'].iloc[0]
                 t0_auto = edited_df['temp'].iloc[0]
                 ok, msg, df_clean = DataProcessor.validate_data(edited_df)
