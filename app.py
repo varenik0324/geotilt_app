@@ -80,7 +80,7 @@ def get_pdf_path(filename: str) -> Optional[str]:
     return None
 
 # ============================================================
-# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ
+# 3. СПЕЦИФИКАЦИИ ДАТЧИКОВ (расширенные из PDF-руководств)
 # ============================================================
 SENSOR_SPECS = {
     "MAS‑VWS‑EM15H (встроенный)": {
@@ -177,7 +177,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return "\n".join(lines)
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (ИСПРАВЛЕН)
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -222,30 +222,8 @@ class DataProcessor:
     def process_strain_data(df: pd.DataFrame, f0: float, t0: float,
                             sensor_type: str, g_val: Optional[float] = None,
                             c_val: Optional[float] = None) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
-        # Защита от нечисловых данных
         if df is None or df.empty:
             return None, None
-
-        # Копируем и преобразуем все колонки в числа
-        df = df.copy()
-        required = ['load', 'freq', 'temp']
-        for col in required:
-            if col not in df.columns:
-                return None, None
-            # Заменяем запятые на точки, убираем пробелы и преобразуем в float
-            df[col] = pd.to_numeric(
-                df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip(),
-                errors='coerce'
-            )
-        # Удаляем строки с NaN
-        df = df.dropna(subset=required)
-        if df.empty:
-            return None, None
-
-        # Принудительно конвертируем в float (на случай, если остались объекты)
-        df[required] = df[required].astype(float)
-
-        # Определяем K
         K = {
             'MAS‑VWS‑EM15H (встроенный)': CONFIG["DEFAULT_K_EM15H"],
             'MAS‑VWS‑SM25H (поверхностный длинная база)': CONFIG["DEFAULT_K_SM25H"]
@@ -256,43 +234,31 @@ class DataProcessor:
             K = g_val * c_val
         if K is None:
             return None, None
-
-        # Расчёт деформации
-        df['strain_abs'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
-        df['stress_MPa_abs'] = CONFIG["E_MODULUS"] * df['strain_abs'] / 1_000_000 * 0.00689476
-
-        # Округлённые столбцы для вывода
-        df['Прирост деформации, με'] = df['strain_abs'].round(5)
-        df['Напряжение, МПа'] = df['stress_MPa_abs'].round(5)
-
-        # Для обратной совместимости
-        df['strain'] = df['strain_abs']
-        df['stress_MPa'] = df['stress_MPa_abs']
-
+        df = df.copy()
+        df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
+        df['stress_MPa'] = CONFIG["E_MODULUS"] * df['strain'] / 1_000_000 * 0.00689476
         stats = {
             'Количество точек': len(df),
-            'Средняя деформация, μϵ': df['Прирост деформации, με'].mean(),
-            'Макс. деформация, μϵ': df['Прирост деформации, με'].max(),
-            'Мин. деформация, μϵ': df['Прирост деформации, με'].min(),
-            'Среднее напряжение, МПа': df['Напряжение, МПа'].mean(),
-            'Макс. напряжение, МПа': df['Напряжение, МПа'].max(),
-            'Мин. напряжение, МПа': df['Напряжение, МПа'].min(),
-            'Std деформация, μϵ': df['Прирост деформации, με'].std(),
-            'Статистика': df['Прирост деформации, με'].describe().to_dict()
+            'Средняя деформация, μϵ': df['strain'].mean(),
+            'Макс. деформация, μϵ': df['strain'].max(),
+            'Мин. деформация, μϵ': df['strain'].min(),
+            'Среднее напряжение, МПа': df['stress_MPa'].mean(),
+            'Макс. напряжение, МПа': df['stress_MPa'].max(),
+            'Мин. напряжение, МПа': df['stress_MPa'].min(),
+            'Std деформация, μϵ': df['strain'].std(),
+            'Статистика': df['strain'].describe().to_dict()
         }
         return df, stats
 
 # ============================================================
-# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (без изменений)
+# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ
 # ============================================================
 class ReportGenerator:
     @staticmethod
     def to_excel(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str) -> bytes:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            out_cols = ['load', 'freq', 'temp', 'Прирост деформации, με', 'Напряжение, МПа']
-            df_out = df[out_cols].copy()
-            df_out.to_excel(writer, index=False, sheet_name='Результат')
+            df.to_excel(writer, index=False, sheet_name='Результат')
             stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
             stats_df.to_excel(writer, sheet_name='Сводка')
             ws_spec = writer.book.add_worksheet('Спецификация датчика')
@@ -306,14 +272,15 @@ class ReportGenerator:
                f0: float, t0: float) -> io.BytesIO:
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
+        from reportlab.lib.utils import ImageReader
         import matplotlib.pyplot as plt
         from PIL import Image
 
         fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(df['load'], df['Прирост деформации, με'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
+        ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
         ax.set_xlabel("Нагрузка, тс")
-        ax.set_ylabel("Прирост деформации, μϵ")
-        ax.set_title("Прирост деформации от нагрузки")
+        ax.set_ylabel("Деформация, μϵ")
+        ax.set_title("Деформация от нагрузки")
         ax.grid(True)
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=100)
@@ -350,7 +317,7 @@ class ReportGenerator:
         y = height - 500
         for key, val in stats.items():
             if key not in ['Статистика']:
-                c.drawString(60, y, f"{key}: {val:.5f}" if isinstance(val, float) else f"{key}: {val}")
+                c.drawString(60, y, f"{key}: {val:.3f}" if isinstance(val, float) else f"{key}: {val}")
                 y -= 15
                 if y < 50:
                     c.showPage()
@@ -379,13 +346,13 @@ class ReportGenerator:
         doc.add_heading("Сводка", level=2)
         for key, val in stats.items():
             if key not in ['Статистика']:
-                doc.add_paragraph(f"{key}: {val:.5f}" if isinstance(val, float) else f"{key}: {val}")
+                doc.add_paragraph(f"{key}: {val:.3f}" if isinstance(val, float) else f"{key}: {val}")
 
         fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(df['load'], df['Прирост деформации, με'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
+        ax.plot(df['load'], df['strain'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
         ax.set_xlabel("Нагрузка, тс")
-        ax.set_ylabel("Прирост деформации, μϵ")
-        ax.set_title("Прирост деформации от нагрузки")
+        ax.set_ylabel("Деформация, μϵ")
+        ax.set_title("Деформация от нагрузки")
         ax.grid(True)
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=100)
@@ -404,15 +371,15 @@ class ReportGenerator:
         hdr_cells[0].text = "Нагрузка, тс"
         hdr_cells[1].text = "Частота, Гц"
         hdr_cells[2].text = "Температура, °C"
-        hdr_cells[3].text = "Прирост деформации, μϵ"
+        hdr_cells[3].text = "Деформация, μϵ"
         hdr_cells[4].text = "Напряжение, МПа"
         for _, row in df.head(20).iterrows():
             row_cells = table.add_row().cells
             row_cells[0].text = f"{row['load']:.1f}"
             row_cells[1].text = f"{row['freq']:.1f}"
             row_cells[2].text = f"{row['temp']:.1f}"
-            row_cells[3].text = f"{row['Прирост деформации, με']:.5f}"
-            row_cells[4].text = f"{row['Напряжение, МПа']:.5f}"
+            row_cells[3].text = f"{row['strain']:.1f}"
+            row_cells[4].text = f"{row['stress_MPa']:.3f}"
         doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -420,7 +387,7 @@ class ReportGenerator:
         return buffer
 
 # ============================================================
-# 6. ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ (полный, без изменений)
+# 6. ПАРСЕР СВАЙНЫХ ИСПЫТАНИЙ
 # ============================================================
 class PileParser:
     @staticmethod
@@ -685,67 +652,69 @@ def show_pile_results(results: Dict[str, pd.DataFrame], info: Dict):
             csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(f"📥 CSV для {sensor}", data=csv, file_name=f"{sensor}.csv", mime="text/csv")
 
+# ---------- ИЗМЕНЁННАЯ ФУНКЦИЯ ОТОБРАЖЕНИЯ (НАГРУЗКА/РАЗГРУЗКА С СОЕДИНИТЕЛЬНОЙ ЛИНИЕЙ) ----------
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
-    display_cols = ['load', 'freq', 'temp', 'Прирост деформации, με', 'Напряжение, МПа']
-    st.dataframe(result[display_cols].style.format({
-        'load': '{:.2f}',
-        'freq': '{:.1f}',
-        'temp': '{:.1f}',
-        'Прирост деформации, με': '{:.5f}',
-        'Напряжение, МПа': '{:.5f}'
-    }))
-
+    st.dataframe(result)
+    
+    # Определяем фазы (нагрузка/разгрузка) на основе изменения нагрузки
     df_plot = result.copy()
-    phases = ['load']
+    phases = ['load']  # первая точка
     for i in range(1, len(df_plot)):
         if df_plot['load'].iloc[i] >= df_plot['load'].iloc[i-1]:
             phases.append('load')
         else:
             phases.append('unload')
     df_plot['phase'] = phases
-
+    
     fig = go.Figure()
+    
+    # 1. Общая соединительная линия (пунктирная, серая) – проходит через все точки подряд
     fig.add_trace(go.Scatter(
         x=df_plot['load'],
-        y=df_plot['Прирост деформации, με'],
+        y=df_plot['strain'],
         mode='lines',
         name='Общий ход',
         line=dict(color='gray', dash='dash', width=1),
         showlegend=True
     ))
+    
+    # 2. Линия нагрузки (синяя) – только точки, где phase == 'load'
     df_load = df_plot[df_plot['phase'] == 'load']
     if not df_load.empty:
         fig.add_trace(go.Scatter(
             x=df_load['load'],
-            y=df_load['Прирост деформации, με'],
+            y=df_load['strain'],
             mode='lines+markers',
             name='Нагрузка',
             line=dict(color='blue', width=2),
             marker=dict(color='blue', size=8)
         ))
+    
+    # 3. Линия разгрузки (красная) – только точки, где phase == 'unload'
     df_unload = df_plot[df_plot['phase'] == 'unload']
     if not df_unload.empty:
         fig.add_trace(go.Scatter(
             x=df_unload['load'],
-            y=df_unload['Прирост деформации, με'],
+            y=df_unload['strain'],
             mode='lines+markers',
             name='Разгрузка',
             line=dict(color='red', width=2),
             marker=dict(color='red', size=8)
         ))
+    
     fig.update_layout(
-        title="Прирост деформации от нагрузки (нагрузка/разгрузка)",
+        title="Деформация от нагрузки (нагрузка/разгрузка с соединительной линией)",
         xaxis_title="Нагрузка, тс",
-        yaxis_title="Прирост деформации, μϵ",
+        yaxis_title="Деформация, μϵ",
         template=st.session_state.get('template', 'plotly_white')
     )
     st.plotly_chart(fig, use_container_width=True)
-
+    
     with st.expander("📊 Расширенная статистика"):
         stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Значение'])
         st.dataframe(stats_df)
-
+    
     col1, col2, col3 = st.columns(3)
     with col1:
         excel_data = ReportGenerator.to_excel(result, stats, sensor_name, sensor_type)
@@ -756,8 +725,8 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     with col2:
-        pdf_data = ReportGenerator.to_pdf(result, stats, sensor_name, sensor_type,
-                                         st.session_state.get('f0', 1000.0),
+        pdf_data = ReportGenerator.to_pdf(result, stats, sensor_name, sensor_type, 
+                                         st.session_state.get('f0', 1000.0), 
                                          st.session_state.get('t0', 20.0))
         st.download_button(
             label="📄 PDF",
@@ -775,9 +744,10 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
+# -------------------------------------------------------------------------
 
 # ============================================================
-# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ
+# 8. ОСНОВНОЕ ПРИЛОЖЕНИЕ (С ОБНОВЛЁННЫМИ ССЫЛКАМИ)
 # ============================================================
 def main():
     st.set_page_config(
@@ -787,7 +757,8 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles', 'page', 'auto_f0_t0']:
+    # Инициализация состояния
+    for key in ['result', 'stats', 'sensor_name', 'template', 'f0', 't0', 'profiles', 'page']:
         if key not in st.session_state:
             if key == 'template':
                 st.session_state[key] = 'plotly_white'
@@ -795,11 +766,10 @@ def main():
                 st.session_state[key] = 1000.0 if key == 'f0' else 20.0
             elif key == 'page':
                 st.session_state[key] = 'Главная'
-            elif key == 'auto_f0_t0':
-                st.session_state[key] = True
             else:
                 st.session_state[key] = None if key not in ['profiles'] else {}
 
+    # Шапка
     col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
         st.image("https://via.placeholder.com/80x40?text=GF", width=80)
@@ -809,6 +779,7 @@ def main():
         theme_toggle = st.toggle("🌙 Тёмная тема", value=st.session_state.template == 'plotly_dark')
         st.session_state.template = 'plotly_dark' if theme_toggle else 'plotly_white'
 
+    # Боковая панель
     with st.sidebar:
         st.markdown("### 🧭 Навигация")
         pages = {
@@ -831,8 +802,10 @@ def main():
         if specs:
             st.caption(f"**K:** {specs.get('k_factor')}")
             st.caption(f"**Диапазон:** {specs.get('measuring_range')}")
+            
             with st.expander("📄 Полная спецификация датчика", expanded=False):
                 st.text(get_sensor_specs(sensor_type))
+            
             pdf_file = specs.get('pdf_file')
             if pdf_file:
                 pdf_path = get_pdf_path(pdf_file)
@@ -855,14 +828,10 @@ def main():
             g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
             c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
         
-        auto_f0_t0 = st.checkbox("Авто f₀/T₀ из данных", value=st.session_state.auto_f0_t0, key="auto_f0_t0_check")
-        st.session_state.auto_f0_t0 = auto_f0_t0
-
-        f0 = st.number_input("f₀ (Гц)", value=st.session_state.f0, step=0.1, key="f0_input", disabled=auto_f0_t0)
-        t0 = st.number_input("T₀ (°C)", value=st.session_state.t0, step=0.1, key="t0_input", disabled=auto_f0_t0)
-        if not auto_f0_t0:
-            st.session_state.f0 = f0
-            st.session_state.t0 = t0
+        f0 = st.number_input("f₀ (Гц)", value=st.session_state.f0, step=0.1, key="f0_input")
+        t0 = st.number_input("T₀ (°C)", value=st.session_state.t0, step=0.1, key="t0_input")
+        st.session_state.f0 = f0
+        st.session_state.t0 = t0
         
         st.markdown("---")
         profile_name = st.text_input("💾 Сохранить профиль", value="default")
@@ -894,11 +863,13 @@ def main():
                     st.session_state.c_val = p['c_val']
                 st.rerun()
 
+    # ---- Основные вкладки ----
     page = st.session_state.page
     
     if page == "Главная":
         st.markdown("## 🏠 Дашборд")
         st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
+        
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("📊 Загружено файлов", "0", delta=None)
@@ -906,11 +877,14 @@ def main():
             st.metric("📈 Обработано датчиков", "0", delta=None)
         with col3:
             st.metric("📅 Последний запуск", datetime.now().strftime("%d.%m.%Y"))
+        
         if st.session_state.result is not None:
             st.markdown("### 📊 Последние результаты")
             st.dataframe(st.session_state.result.head(10))
         else:
             st.info("Нет загруженных данных. Перейдите в раздел 'Загрузка' или 'Ручной ввод'.")
+        
+        # Полезные ссылки (ОБНОВЛЕНО)
         st.markdown("### 🔗 Полезные ресурсы")
         col1, col2 = st.columns(2)
         with col1:
@@ -934,6 +908,7 @@ def main():
                 df_raw = pd.read_excel(uploaded)
                 st.write("📋 Предпросмотр загруженных данных:")
                 st.dataframe(df_raw.head(10))
+                
                 if len(df_raw.columns) >= 3:
                     cols = df_raw.columns.tolist()
                     col1, col2, col3 = st.columns(3)
@@ -943,24 +918,20 @@ def main():
                         freq_col = st.selectbox("Столбец с частотой", cols, index=1 if len(cols)>1 else 0)
                     with col3:
                         temp_col = st.selectbox("Столбец с температурой", cols, index=2 if len(cols)>2 else 0)
+                    
                     if load_col and freq_col and temp_col:
                         df_mapped = df_raw[[load_col, freq_col, temp_col]].copy()
                         df_mapped.columns = ['load', 'freq', 'temp']
-                        if st.session_state.auto_f0_t0:
-                            f0_auto = df_mapped['freq'].iloc[0]
-                            t0_auto = df_mapped['temp'].iloc[0]
-                            st.info(f"Автоопределены: f₀ = {f0_auto:.1f} Гц, T₀ = {t0_auto:.1f} °C")
-                        else:
-                            f0_auto = st.session_state.f0
-                            t0_auto = st.session_state.t0
+                        
                         st.subheader("✏️ Редактирование данных (опционально)")
                         edited_df = st.data_editor(df_mapped, num_rows="dynamic", use_container_width=True)
+                        
                         if st.button("🚀 Обработать данные", key="process_flat"):
                             ok, msg, df_clean = DataProcessor.validate_data(edited_df)
                             if ok:
                                 st.success(msg)
                                 result, stats = DataProcessor.process_strain_data(
-                                    df_clean, f0_auto, t0_auto, sensor_type, g_val, c_val
+                                    df_clean, f0, t0, sensor_type, g_val, c_val
                                 )
                                 if result is not None and not result.empty:
                                     st.session_state.result = result
@@ -981,6 +952,7 @@ def main():
         st.markdown("## ✏️ Ручной ввод данных")
         st.markdown("Вставьте данные в формате: **нагрузка, частота, температура**.")
         st.markdown("Поддерживаются разделители: **запятая**, **табуляция**, **пробел**, **точка с запятой**.")
+        
         delimiter = st.selectbox("Выберите разделитель", 
                                  ["Авто", "Запятая (,)", "Табуляция (\\t)", "Пробел", "Точка с запятой (;)"],
                                  index=0)
@@ -992,7 +964,9 @@ def main():
             "Точка с запятой (;)": ";"
         }
         sep = sep_map[delimiter]
+        
         text = st.text_area("Введите данные (каждая строка – одна точка)", height=200)
+        
         if st.button("🔄 Предпросмотр", key="preview_manual"):
             if not text.strip():
                 st.warning("Введите данные.")
@@ -1017,21 +991,17 @@ def main():
                         st.session_state['manual_df'] = df_preview
                 except Exception as e:
                     st.error(f"Ошибка предпросмотра: {e}")
+        
         if 'manual_df' in st.session_state and st.session_state['manual_df'] is not None:
             st.subheader("✏️ Редактирование данных")
             edited_df = st.data_editor(st.session_state['manual_df'], num_rows="dynamic", use_container_width=True)
+            
             if st.button("🚀 Обработать данные", key="process_manual"):
-                if st.session_state.auto_f0_t0:
-                    f0_auto = edited_df['freq'].iloc[0]
-                    t0_auto = edited_df['temp'].iloc[0]
-                else:
-                    f0_auto = st.session_state.f0
-                    t0_auto = st.session_state.t0
                 ok, msg, df_clean = DataProcessor.validate_data(edited_df)
                 if ok:
                     st.success(msg)
                     result, stats = DataProcessor.process_strain_data(
-                        df_clean, f0_auto, t0_auto, sensor_type, g_val, c_val
+                        df_clean, f0, t0, sensor_type, g_val, c_val
                     )
                     if result is not None and not result.empty:
                         st.session_state.result = result
@@ -1045,17 +1015,22 @@ def main():
     
     elif page == "Свайные испытания":
         st.markdown("## 🧪 Свайные испытания")
-        st.markdown("Загрузите файл с листами **'Свая ...'** и **'ИСПЫТАНИЯ'**.")
+        st.markdown("""
+        Загрузите файл с листами **'Свая ...'** и **'ИСПЫТАНИЯ'**.  
+        **Автоматический парсер** найдет данные. Если не сработает – используйте **ручную настройку**.
+        """)
         uploaded_pile = st.file_uploader("Выберите .xlsx", type=["xlsx"], key="pile_upload")
         if uploaded_pile:
             file_bytes = uploaded_pile.read()
             df_preview = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, header=None, nrows=30)
             st.subheader("📋 Превью файла (первые 30 строк)")
             st.dataframe(df_preview)
-            with st.expander("⚙️ Ручная настройка", expanded=False):
+
+            with st.expander("⚙️ Ручная настройка (если автоматика не сработала)", expanded=False):
                 manual_header = st.number_input("Строка заголовков (0-индекс)", min_value=0, max_value=50, value=4, step=1)
                 sensor_col = st.number_input("Столбец с датчиками (0-индекс)", min_value=0, max_value=20, value=0, step=1)
                 use_manual = st.checkbox("Использовать ручные настройки")
+
             try:
                 with st.spinner("Обработка файла..."):
                     results, info = PileParser.parse_pile_data(
@@ -1071,6 +1046,8 @@ def main():
     
     elif page == "Подбор датчиков":
         st.markdown("## 📋 Подбор датчиков")
+        st.markdown("Выберите параметры, и система предложит подходящие датчики.")
+        
         col1, col2 = st.columns(2)
         with col1:
             meas_param = st.selectbox("Измеряемый параметр", 
@@ -1079,6 +1056,7 @@ def main():
         with col2:
             accuracy_req = st.selectbox("Требуемая точность", ["0.5% F.S", "0.1% F.S"])
             temp_range = st.selectbox("Диапазон температур", ["-20…+80 °C", "-40…+90 °C", "-20…+60 °C"])
+        
         if st.button("🔍 Подобрать датчик"):
             recommendations = []
             for sensor, specs in SENSOR_SPECS.items():
@@ -1098,6 +1076,7 @@ def main():
                     reasons.append(f"✓ температурный диапазон {temp_range}")
                 if score > 0:
                     recommendations.append({"Датчик": sensor, "Совместимость": score, "Обоснование": "; ".join(reasons)})
+            
             if recommendations:
                 df_rec = pd.DataFrame(recommendations).sort_values('Совместимость', ascending=False)
                 st.dataframe(df_rec, use_container_width=True)
@@ -1107,36 +1086,43 @@ def main():
     
     elif page == "Калибровка":
         st.markdown("## 🎛️ Интерактивная калибровка")
+        st.markdown("Изменяйте параметры ползунками и наблюдайте за изменением графика и статистики.")
+        
         if st.session_state.result is not None:
             df_orig = st.session_state.result.copy()
+            
             col1, col2 = st.columns(2)
             with col1:
-                f0_cal = st.slider("f₀ (Гц)", min_value=500.0, max_value=2000.0, value=st.session_state.f0, step=0.5)
-                t0_cal = st.slider("T₀ (°C)", min_value=-20.0, max_value=50.0, value=st.session_state.t0, step=0.5)
+                f0_cal = st.slider("f₀ (Гц)", min_value=500.0, max_value=2000.0, value=f0, step=0.5)
+                t0_cal = st.slider("T₀ (°C)", min_value=-20.0, max_value=50.0, value=t0, step=0.5)
             with col2:
                 g_cal = st.slider("G (если нужен)", min_value=0.5, max_value=2.0, value=g_val or 1.0, step=0.001)
                 c_cal = st.slider("C (если нужен)", min_value=0.5, max_value=2.0, value=c_val or 1.0, step=0.001)
+            
             result_cal, stats_cal = DataProcessor.process_strain_data(
                 df_orig, f0_cal, t0_cal, sensor_type, g_cal, c_cal
             )
+            
             if result_cal is not None:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=result_cal['load'], y=result_cal['Прирост деформации, με'], 
-                                        mode='lines+markers', name='Прирост деформации, μϵ'))
+                fig.add_trace(go.Scatter(x=result_cal['load'], y=result_cal['strain'], 
+                                        mode='lines+markers', name='Деформация, μϵ'))
                 fig.update_layout(
-                    title="Прирост деформации от нагрузки (калибровка)",
+                    title="Деформация от нагрузки (калибровка)",
                     xaxis_title="Нагрузка, тс",
-                    yaxis_title="Прирост деформации, μϵ",
+                    yaxis_title="Деформация, μϵ",
                     template=st.session_state.template
                 )
                 st.plotly_chart(fig, use_container_width=True)
+                
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Средняя деформация", f"{stats_cal['Средняя деформация, μϵ']:.5f} μϵ")
-                    st.metric("Макс. деформация", f"{stats_cal['Макс. деформация, μϵ']:.5f} μϵ")
+                    st.metric("Средняя деформация", f"{stats_cal['Средняя деформация, μϵ']:.1f} μϵ")
+                    st.metric("Макс. деформация", f"{stats_cal['Макс. деформация, μϵ']:.1f} μϵ")
                 with col2:
-                    st.metric("Среднее напряжение", f"{stats_cal['Среднее напряжение, МПа']:.5f} МПа")
-                    st.metric("Мин. деформация", f"{stats_cal['Мин. деформация, μϵ']:.5f} μϵ")
+                    st.metric("Среднее напряжение", f"{stats_cal['Среднее напряжение, МПа']:.3f} МПа")
+                    st.metric("Мин. деформация", f"{stats_cal['Мин. деформация, μϵ']:.1f} μϵ")
+                
                 if st.button("✅ Применить эти параметры к основному результату"):
                     st.session_state.f0 = f0_cal
                     st.session_state.t0 = t0_cal
@@ -1148,11 +1134,15 @@ def main():
     
     elif page == "Сравнение":
         st.markdown("## 📊 Сравнение нескольких датчиков")
+        st.markdown("Загрузите несколько файлов для сравнения на одном графике.")
+        
         uploaded_files = st.file_uploader("Выберите файлы .xlsx", type=["xlsx", "xls"], 
                                           accept_multiple_files=True, key="compare_upload")
+        
         if uploaded_files:
-            compare_what = st.selectbox("Что сравнивать?", ["Прирост деформации, μϵ", "Напряжение, МПа", "Частота, Гц"])
+            compare_what = st.selectbox("Что сравнивать?", ["Деформация, μϵ", "Напряжение, МПа", "Частота, Гц"])
             fig_comp = go.Figure()
+            
             for file in uploaded_files:
                 try:
                     df_raw = pd.read_excel(file)
@@ -1161,18 +1151,12 @@ def main():
                         df_comp.columns = ['load', 'freq', 'temp']
                         ok, _, df_clean = DataProcessor.validate_data(df_comp)
                         if ok:
-                            if st.session_state.auto_f0_t0:
-                                f0_comp = df_clean['freq'].iloc[0]
-                                t0_comp = df_clean['temp'].iloc[0]
-                            else:
-                                f0_comp = st.session_state.f0
-                                t0_comp = st.session_state.t0
                             result_comp, _ = DataProcessor.process_strain_data(
-                                df_clean, f0_comp, t0_comp, sensor_type, g_val, c_val
+                                df_clean, f0, t0, sensor_type, g_val, c_val
                             )
                             if result_comp is not None:
-                                y_col = {'Прирост деформации, μϵ': 'Прирост деформации, με', 
-                                        'Напряжение, МПа': 'Напряжение, МПа', 
+                                y_col = {'Деформация, μϵ': 'strain', 
+                                        'Напряжение, МПа': 'stress_MPa', 
                                         'Частота, Гц': 'freq'}[compare_what]
                                 fig_comp.add_trace(go.Scatter(
                                     x=result_comp['load'],
@@ -1182,6 +1166,7 @@ def main():
                                 ))
                 except Exception as e:
                     st.warning(f"Ошибка обработки {file.name}: {e}")
+            
             if fig_comp.data:
                 fig_comp.update_layout(
                     title=f"Сравнение датчиков по параметру: {compare_what}",
@@ -1197,12 +1182,14 @@ def main():
     
     elif page == "Справка":
         st.markdown("## 📚 Справка и полезные ссылки")
+        
         st.markdown("### 📖 Документация")
         st.markdown("""
         - [Руководство пользователя](https://example.com/user-guide)
         - [Техническая документация по датчикам](https://example.com/tech-docs)
         - [API Reference](https://example.com/api)
         """)
+        
         st.markdown("### 📄 Руководства по датчикам")
         col1, col2 = st.columns(2)
         with col1:
@@ -1225,31 +1212,35 @@ def main():
             - [Скачать PDF](https://www.masios.com/docs/MAS-HVLog-sf.pdf)
             - [Страница продукта](https://www.masios.com/product/hvlog)
             """)
-        st.markdown("### 📄 Статьи и публикации")
+        
+        st.markdown("### 📄 Статьи и публикации (ОБНОВЛЕНО)")
         st.markdown("""
         - [Мониторинг напряжений в грунтах](https://example.com/article1)
         - [Выбор тензодатчиков](https://example.com/article2)
         - [Обработка данных](https://example.com/article3)
         - [Датчики давления грунта — месдоза, и датчики деформаций — тензодатчики](https://geofundament.ru/datchiki-davlenija-grunta-mesdoza-i-datchiki-deformacij-tenzodatchiki/)
         """)
+        
         st.markdown("### 🎥 Видео-материалы")
         st.markdown("""
         - [Как пользоваться приложением](https://example.com/video-tutorial)
         - [Обработка свайных испытаний](https://example.com/pile-test)
         - [Калибровка датчиков](https://example.com/calibration)
         """)
+        
         st.markdown("### 📞 Контакты")
         st.markdown("""
         - **Email:** support@geofundament.ru
         - **Телефон:** +7 (495) 123-45-67
         - **Telegram:** @geofundament_bot
         """)
+        
         st.markdown("### ℹ️ О приложении")
         st.markdown("""
-        **Версия:** 2.3  
+        **Версия:** 2.0  
         **Разработчик:** Геофундамент  
         **Лицензия:** MIT  
-        **Дата сборки:** 28.07.2026
+        **Дата сборки:** 26.07.2026
         """)
 
 if __name__ == "__main__":
