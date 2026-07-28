@@ -652,7 +652,7 @@ def show_pile_results(results: Dict[str, pd.DataFrame], info: Dict):
             csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(f"📥 CSV для {sensor}", data=csv, file_name=f"{sensor}.csv", mime="text/csv")
 
-# ---------- ИЗМЕНЁННАЯ ФУНКЦИЯ ОТОБРАЖЕНИЯ (НАГРУЗКА/РАЗГРУЗКА) ----------
+# ---------- ИЗМЕНЁННАЯ ФУНКЦИЯ ОТОБРАЖЕНИЯ (НАГРУЗКА/РАЗГРУЗКА С СОЕДИНИТЕЛЬНОЙ ЛИНИЕЙ) ----------
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
     st.dataframe(result)
@@ -668,7 +668,18 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
     df_plot['phase'] = phases
     
     fig = go.Figure()
-    # Trace для нагрузки
+    
+    # 1. Общая соединительная линия (пунктирная, серая) – проходит через все точки подряд
+    fig.add_trace(go.Scatter(
+        x=df_plot['load'],
+        y=df_plot['strain'],
+        mode='lines',
+        name='Общий ход',
+        line=dict(color='gray', dash='dash', width=1),
+        showlegend=True
+    ))
+    
+    # 2. Линия нагрузки (синяя) – только точки, где phase == 'load'
     df_load = df_plot[df_plot['phase'] == 'load']
     if not df_load.empty:
         fig.add_trace(go.Scatter(
@@ -676,10 +687,11 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             y=df_load['strain'],
             mode='lines+markers',
             name='Нагрузка',
-            line=dict(color='blue'),
-            marker=dict(color='blue')
+            line=dict(color='blue', width=2),
+            marker=dict(color='blue', size=8)
         ))
-    # Trace для разгрузки
+    
+    # 3. Линия разгрузки (красная) – только точки, где phase == 'unload'
     df_unload = df_plot[df_plot['phase'] == 'unload']
     if not df_unload.empty:
         fig.add_trace(go.Scatter(
@@ -687,11 +699,12 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
             y=df_unload['strain'],
             mode='lines+markers',
             name='Разгрузка',
-            line=dict(color='red'),
-            marker=dict(color='red')
+            line=dict(color='red', width=2),
+            marker=dict(color='red', size=8)
         ))
+    
     fig.update_layout(
-        title="Деформация от нагрузки (нагрузка/разгрузка)",
+        title="Деформация от нагрузки (нагрузка/разгрузка с соединительной линией)",
         xaxis_title="Нагрузка, тс",
         yaxis_title="Деформация, μϵ",
         template=st.session_state.get('template', 'plotly_white')
