@@ -419,10 +419,9 @@ def main():
             g_val = st.number_input("G", value=1.0, step=0.001, format="%.3f", key="g_val")
             c_val = st.number_input("C", value=1.0, step=0.001, format="%.3f", key="c_val")
 
-        f0 = st.number_input("f₀ (Гц)", value=st.session_state.f0, step=0.1, key="f0_input")
-        t0 = st.number_input("T₀ (°C)", value=st.session_state.t0, step=0.1, key="t0_input")
-        st.session_state.f0 = f0
-        st.session_state.t0 = t0
+        # Поля f0 и t0 теперь только для информации, так как всегда берём из данных
+        st.info("f₀ и T₀ автоматически определяются из первой строки загруженных данных.")
+        st.caption(f"Текущие значения (заданы по умолчанию): f₀ = {st.session_state.f0:.1f} Гц, T₀ = {st.session_state.t0:.1f} °C")
 
         st.markdown("---")
         profile_name = st.text_input("💾 Сохранить профиль", value="default")
@@ -430,8 +429,8 @@ def main():
             profile = {
                 'name': profile_name,
                 'sensor_type': sensor_type,
-                'f0': f0,
-                't0': t0,
+                'f0': st.session_state.f0,
+                't0': st.session_state.t0,
                 'g_val': g_val,
                 'c_val': c_val,
                 'theme': 'Тёмная' if theme_toggle else 'Светлая'
@@ -475,6 +474,7 @@ def main():
     elif page == "Загрузка":
         st.markdown("## 📂 Загрузка файла (плоская таблица)")
         st.markdown("Файл должен содержать колонки: **нагрузка (load)**, **частота (freq)**, **температура (temp)**.")
+        st.markdown("⚠️ **f₀ и T₀ будут автоматически взяты из ПЕРВОЙ строки данных (ступень 0).**")
         uploaded = st.file_uploader("Выберите Excel-файл", type=["xlsx", "xls"], key="flat_upload")
         if uploaded:
             try:
@@ -496,6 +496,11 @@ def main():
                         df_mapped = df_raw[[load_col, freq_col, temp_col]].copy()
                         df_mapped.columns = ['load', 'freq', 'temp']
 
+                        # Всегда берём f0 и t0 из первой строки
+                        f0_auto = df_mapped['freq'].iloc[0]
+                        t0_auto = df_mapped['temp'].iloc[0]
+                        st.info(f"Автоопределены: f₀ = {f0_auto:.1f} Гц, T₀ = {t0_auto:.1f} °C")
+
                         st.subheader("✏️ Редактирование данных (опционально)")
                         edited_df = st.data_editor(df_mapped, num_rows="dynamic", use_container_width=True)
 
@@ -504,7 +509,7 @@ def main():
                             if ok:
                                 st.success(msg)
                                 result, stats = DataProcessor.process_strain_data(
-                                    df_clean, f0, t0, sensor_type, g_val, c_val
+                                    df_clean, f0_auto, t0_auto, sensor_type, g_val, c_val
                                 )
                                 if result is not None and not result.empty:
                                     st.session_state.result = result
@@ -524,6 +529,7 @@ def main():
     elif page == "Ручной ввод":
         st.markdown("## ✏️ Ручной ввод данных")
         st.markdown("Вставьте данные в формате: **нагрузка, частота, температура**.")
+        st.markdown("⚠️ **f₀ и T₀ будут автоматически взяты из ПЕРВОЙ строки введённых данных.**")
         st.markdown("Поддерживаются разделители: **запятая**, **табуляция**, **пробел**, **точка с запятой**.")
 
         delimiter = st.selectbox("Выберите разделитель",
@@ -570,11 +576,14 @@ def main():
             edited_df = st.data_editor(st.session_state['manual_df'], num_rows="dynamic", use_container_width=True)
 
             if st.button("🚀 Обработать данные", key="process_manual"):
+                # Всегда берём f0 и t0 из первой строки
+                f0_auto = edited_df['freq'].iloc[0]
+                t0_auto = edited_df['temp'].iloc[0]
                 ok, msg, df_clean = DataProcessor.validate_data(edited_df)
                 if ok:
                     st.success(msg)
                     result, stats = DataProcessor.process_strain_data(
-                        df_clean, f0, t0, sensor_type, g_val, c_val
+                        df_clean, f0_auto, t0_auto, sensor_type, g_val, c_val
                     )
                     if result is not None and not result.empty:
                         st.session_state.result = result
@@ -592,8 +601,10 @@ def main():
         **Приложение для расчёта деформации по данным тензодатчиков.**
         - Загрузите Excel-файл с колонками: нагрузка, частота, температура.
         - Либо введите данные вручную.
-        - Укажите параметры датчика (f₀, T₀, K и т.д.).
-        - Получите график деформации от нагрузки и статистику.
+        - Укажите параметры датчика (тип, K и т.д.).
+        - **f₀ и T₀ автоматически берутся из первой строки данных.**
+        - Получите график прироста деформации от нагрузки и статистику.
+        - Экспортируйте результаты в Excel, PDF или Word.
         """)
 
 if __name__ == "__main__":
