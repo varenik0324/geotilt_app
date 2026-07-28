@@ -83,7 +83,7 @@ def get_sensor_specs(sensor_type: str) -> str:
     return f"Тип: {sensor_type}\nK: {SENSOR_SPECS.get(sensor_type, {}).get('k_factor', 'неизвестен')}"
 
 # ============================================================
-# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (ГАРАНТИРОВАННОЕ ПРИВЕДЕНИЕ К ЧИСЛАМ)
+# 4. ОБРАБОТЧИК ТЕНЗОДАТЧИКОВ (с базовой деформацией)
 # ============================================================
 class DataProcessor:
     @staticmethod
@@ -118,7 +118,7 @@ class DataProcessor:
         df_clean = df_clean.dropna(subset=required)
         if df_clean.empty:
             return False, "После очистки не осталось числовых строк. Проверьте данные.", df_clean
-        # Принудительное приведение к float
+        # Принудительно приводим к float
         df_clean[required] = df_clean[required].astype(float)
         if errors:
             msg = "Обнаружены проблемы с данными:\n" + "\n".join(errors) + "\nПроблемные строки были удалены."
@@ -139,12 +139,15 @@ class DataProcessor:
         for col in ['load', 'freq', 'temp']:
             if col not in df.columns:
                 return None, None
-            df[col] = df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip()
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(',', '.').str.replace(' ', '').str.strip(),
+                errors='coerce'
+            )
+        # Удаляем строки с NaN
         df = df.dropna(subset=['load', 'freq', 'temp'])
         if df.empty:
             return None, None
-        # Явный перевод в float
+        # Явный перевод в float (на всякий случай)
         df[['load', 'freq', 'temp']] = df[['load', 'freq', 'temp']].astype(float)
 
         # Приводим начальные параметры к float
@@ -163,14 +166,19 @@ class DataProcessor:
         if K is None:
             return None, None
 
-        # Расчёт
+        # ---- РАСЧЁТ ----
+        # Прирост деформации (относительно f0, t0)
         df['strain'] = K * (df['freq']**2 - f0**2) + (df['temp'] - t0) * (CONFIG["F_STRING"] - CONFIG["F_CONCRETE"])
+        # Базовая деформация (абсолютная) A = K * f^2
+        df['Базовая деформация, μϵ'] = K * df['freq']**2
+        # Напряжение (из прироста)
         df['stress_MPa'] = CONFIG["E_MODULUS"] * df['strain'] / 1_000_000 * 0.00689476
 
-        # Русские заголовки для вывода
+        # Русские названия для отображения
         df['Прирост деформации, μϵ'] = df['strain']
         df['Напряжение, МПа'] = df['stress_MPa']
 
+        # Статистика (по приросту)
         stats = {
             'Количество точек': len(df),
             'Средняя деформация, μϵ': df['Прирост деформации, μϵ'].mean(),
@@ -185,14 +193,15 @@ class DataProcessor:
         return df, stats
 
 # ============================================================
-# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (с русскими заголовками)
+# 5. ГЕНЕРАЦИЯ ОТЧЁТОВ (с добавлением базовой деформации)
 # ============================================================
 class ReportGenerator:
     @staticmethod
     def to_excel(df: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str) -> bytes:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            out_df = df[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
+            # Выводим все ключевые столбцы: нагрузка, частота, температура, базовая деформация, прирост, напряжение
+            out_df = df[['load', 'freq', 'temp', 'Базовая деформация, μϵ', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
             out_df.rename(columns={
                 'load': 'Нагрузка, тс',
                 'freq': 'Частота, Гц',
@@ -213,6 +222,7 @@ class ReportGenerator:
         import matplotlib.pyplot as plt
         from PIL import Image
 
+        # График прироста
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(df['load'], df['Прирост деформации, μϵ'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
         ax.set_xlabel("Нагрузка, тс")
@@ -277,6 +287,7 @@ class ReportGenerator:
             if key not in ['Статистика']:
                 doc.add_paragraph(f"{key}: {val:.3f}" if isinstance(val, float) else f"{key}: {val}")
 
+        # График прироста
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(df['load'], df['Прирост деформации, μϵ'], 'o-', color='#1f77b4', linewidth=2, markersize=8)
         ax.set_xlabel("Нагрузка, тс")
@@ -294,21 +305,23 @@ class ReportGenerator:
         os.remove(img_path)
 
         doc.add_heading("Таблица результатов (первые 20 строк)", level=2)
-        table = doc.add_table(rows=1, cols=5)
+        table = doc.add_table(rows=1, cols=6)
         table.style = 'Table Grid'
         hdr_cells = table.rows[0].cells
         hdr_cells[0].text = "Нагрузка, тс"
         hdr_cells[1].text = "Частота, Гц"
         hdr_cells[2].text = "Температура, °C"
-        hdr_cells[3].text = "Прирост деформации, μϵ"
-        hdr_cells[4].text = "Напряжение, МПа"
+        hdr_cells[3].text = "Базовая деформация, μϵ"
+        hdr_cells[4].text = "Прирост деформации, μϵ"
+        hdr_cells[5].text = "Напряжение, МПа"
         for _, row in df.head(20).iterrows():
             row_cells = table.add_row().cells
             row_cells[0].text = f"{row['load']:.1f}"
             row_cells[1].text = f"{row['freq']:.1f}"
             row_cells[2].text = f"{row['temp']:.1f}"
-            row_cells[3].text = f"{row['Прирост деформации, μϵ']:.3f}"
-            row_cells[4].text = f"{row['Напряжение, МПа']:.3f}"
+            row_cells[3].text = f"{row['Базовая деформация, μϵ']:.3f}"
+            row_cells[4].text = f"{row['Прирост деформации, μϵ']:.3f}"
+            row_cells[5].text = f"{row['Напряжение, МПа']:.3f}"
         doc.add_paragraph("© Геофундамент, 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -316,11 +329,11 @@ class ReportGenerator:
         return buffer
 
 # ============================================================
-# 6. UI-ФУНКЦИИ (с русскими заголовками)
+# 6. UI-ФУНКЦИИ (с добавлением базовой деформации)
 # ============================================================
 def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, sensor_type: str):
     st.subheader("✅ Результат обработки")
-    display_df = result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
+    display_df = result[['load', 'freq', 'temp', 'Базовая деформация, μϵ', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
     display_df.rename(columns={
         'load': 'Нагрузка, тс',
         'freq': 'Частота, Гц',
@@ -330,10 +343,12 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         'Нагрузка, тс': '{:.2f}',
         'Частота, Гц': '{:.1f}',
         'Температура, °C': '{:.1f}',
+        'Базовая деформация, μϵ': '{:.3f}',
         'Прирост деформации, μϵ': '{:.5f}',
         'Напряжение, МПа': '{:.5f}'
     }))
 
+    # График прироста
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=result['load'],
@@ -341,6 +356,13 @@ def display_flat_results(result: pd.DataFrame, stats: Dict, sensor_name: str, se
         mode='lines+markers',
         name='Прирост деформации, μϵ'
     ))
+    # Дополнительно можно показать базовую деформацию (закомментировано, но при желании можно включить)
+    # fig.add_trace(go.Scatter(
+    #     x=result['load'],
+    #     y=result['Базовая деформация, μϵ'],
+    #     mode='lines+markers',
+    #     name='Базовая деформация, μϵ'
+    # ))
     fig.update_layout(
         title="Прирост деформации от нагрузки",
         xaxis_title="Нагрузка, тс",
@@ -479,7 +501,7 @@ def main():
         st.markdown("Добро пожаловать в приложение для анализа данных тензодатчиков!")
         if st.session_state.result is not None:
             st.markdown("### 📊 Последние результаты")
-            res = st.session_state.result[['load', 'freq', 'temp', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
+            res = st.session_state.result[['load', 'freq', 'temp', 'Базовая деформация, μϵ', 'Прирост деформации, μϵ', 'Напряжение, МПа']].copy()
             res.rename(columns={
                 'load': 'Нагрузка, тс',
                 'freq': 'Частота, Гц',
@@ -620,6 +642,10 @@ def main():
         - Либо введите данные вручную.
         - Укажите параметры датчика (тип, K и т.д.).
         - **f₀ и T₀ автоматически берутся из первой строки данных.**
+        - Расчёт:
+          - **Базовая деформация** (A) = K * f²
+          - **Прирост деформации** (ε) = K*(f² - f₀²) + (T - T₀)*2.2
+          - **Напряжение** (МПа) = E * ε / 10⁶ * 0.00689476
         - Получите график прироста деформации от нагрузки и статистику.
         - Экспортируйте результаты в Excel, PDF или Word.
         """)
